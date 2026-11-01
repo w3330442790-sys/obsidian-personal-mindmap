@@ -28,7 +28,17 @@ function copyManifest() {
   fs.copyFileSync("webview/public/LICENSE-OFL.txt", path.join(outDir, "LICENSE-fonts-OFL.txt"));
 }
 
+function licenseBanner(){
+  const notices=['Fusion Mindmap: upstream software, runtime dependency and bundled font licenses',...['LICENSE','vendor/gogoga/LICENSE','webview/public/LICENSE-OFL.txt'].map(file=>fs.readFileSync(file,'utf8'))];
+  const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+  for(const [directory,entry]of Object.entries(lock.packages)){
+    if(!directory||entry.dev||!directory.startsWith('node_modules/')||!fs.existsSync(directory))continue;
+    for(const name of fs.readdirSync(directory).filter(file=>/^(licen[cs]e|copying)(\.|$)/i.test(file))){const file=path.join(directory,name);if(fs.statSync(file).isFile())notices.push(directory.replace(/^node_modules\//,''),fs.readFileSync(file,'utf8'));}
+  }
+  return '/*!\n'+notices.join('\n\n').replace(/\*\//g,'* /')+'\n*/';
+}
 const ctx = await esbuild.context({
+  banner: { js: licenseBanner() },
   entryPoints: ["src/obsidian/main.ts"],
   bundle: true,
   outfile: path.join(outDir, "main.js"),
