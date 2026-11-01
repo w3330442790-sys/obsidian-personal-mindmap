@@ -3,7 +3,7 @@
   "displayName": "融合 Mindmap",
   "description": "个人 Obsidian 融合思维导图，基于 Weilanx 和 gogoga MIT 源码",
   "version": "0.1.0",
-  "publisher": "weilanx",
+  "publisher": "w3330442790-sys",
   "icon": "media/logo.png",
   "license": "MIT",
   "engines": {
@@ -304,5 +304,13 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "roughjs": "^4.6.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/w3330442790-sys/obsidian-personal-mindmap.git"
+  },
+  "homepage": "https://github.com/w3330442790-sys/obsidian-personal-mindmap",
+  "bugs": {
+    "url": "https://github.com/w3330442790-sys/obsidian-personal-mindmap/issues"
   }
 }

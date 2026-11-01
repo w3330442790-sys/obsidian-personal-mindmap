@@ -6,12 +6,24 @@
 
 需要 Obsidian 1.8.7 或更新版本。
 
+### 通过 BRAT 安装和更新
+
+1. 在 Obsidian 的社区插件中安装并启用 **BRAT**。
+2. 打开 BRAT 设置，选择 **Add beta plugin**。
+3. 输入 `w3330442790-sys/obsidian-personal-mindmap`，版本选 **Latest**，添加并启用插件。
+4. 后续使用 BRAT 的检查更新功能，仓库地址无需更换。不要冻结到固定版本，除非希望保持该版本。
+
+仓库：[w3330442790-sys/obsidian-personal-mindmap](https://github.com/w3330442790-sys/obsidian-personal-mindmap)。
+安装附件：[最新 Release](https://github.com/w3330442790-sys/obsidian-personal-mindmap/releases/latest)。
+
+### 手动安装
+
 1. 解压 `personal-mindmap-0.1.0.zip`，得到 `personal-mindmap` 文件夹。
 2. 将文件夹放入你的笔记库 `.obsidian/plugins/` 中，最终应有 `.obsidian/plugins/personal-mindmap/main.js`、`manifest.json`、`styles.css`。
 3. 重启 Obsidian，或重新加载第三方插件列表，在「设置 → 第三方插件」启用 **融合 Mindmap**。
 4. 若已安装两个原版插件，先停用它们，避免争抢 `.wmind`、`.xmind` 文件和 `mindmap` 代码块的处理器。原插件目录和数据无需删除。
 
-本次交付只生成安装包，没有修改或启用任何真实笔记库中的插件。源码开发依赖不需要复制进笔记库。
+GitHub Release 同时提供 BRAT 使用的三个独立附件和手动安装 ZIP。发布不会自动修改或启用真实笔记库中的插件。源码开发依赖不需要复制进笔记库。
 
 ## 两种文件怎么选
 

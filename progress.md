@@ -7,3 +7,5 @@
 生产构建已通过；ZIP 共 14 个文件，2,157,791 字节，所有 ZIP CRC 与三件套内容核对通过。安装包位于 artifacts/personal-mindmap-0.1.0.zip。
 
 源码保留在独立 feat/unified-mindmap 分支；本地提交使用 Codex 作者身份，不修改用户 Git 配置，也不推送远端。
+
+后续用户明确要求 BRAT 安装渠道：准备公开 GitHub 源码仓库及 0.1.0 Release，三件套内容与已验收本地构建一致，新增 BRAT 说明和 CI。
