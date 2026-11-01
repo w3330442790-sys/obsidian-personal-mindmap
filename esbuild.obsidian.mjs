@@ -6,7 +6,7 @@ import path from "node:path";
 
 const args = process.argv.slice(2);
 const watch = args.includes("--watch");
-const outDir = args.includes("--out") ? args[args.indexOf("--out") + 1] : "dist/obsidian";
+const outDir = args.includes("--out") ? args[args.indexOf("--out") + 1] : "dist/personal-mindmap";
 fs.mkdirSync(outDir, { recursive: true });
 
 /** 把共享样式包进 `body .wm-root { ... }`:共享样式里的 .wm-root 就是包裹层本身 */
@@ -18,11 +18,14 @@ function scopedCss() {
 async function buildCss() {
   // esbuild 把 CSS 嵌套展开成普通选择器,兼容较老的手机 WebView
   const res = await esbuild.transform(scopedCss(), { loader: "css", target: ["chrome100", "safari15"] });
-  fs.writeFileSync(path.join(outDir, "styles.css"), "/* Weilanx Mind Map */\n" + res.code);
+  fs.writeFileSync(path.join(outDir, "styles.css"), "/* Fusion Mindmap; upstream Weilanx + gogoga (MIT) */\n" + res.code + '\n' + fs.readFileSync('vendor/gogoga/styles.css','utf8'));
 }
 
 function copyManifest() {
   fs.copyFileSync("manifest.json", path.join(outDir, "manifest.json"));
+  fs.copyFileSync("LICENSE", path.join(outDir, "LICENSE-Weilanx.txt"));
+  fs.copyFileSync("vendor/gogoga/LICENSE", path.join(outDir, "LICENSE-gogoga.txt"));
+  fs.copyFileSync("webview/public/LICENSE-OFL.txt", path.join(outDir, "LICENSE-fonts-OFL.txt"));
 }
 
 const ctx = await esbuild.context({

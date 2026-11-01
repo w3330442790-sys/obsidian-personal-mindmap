@@ -55,14 +55,15 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
 const STRUCTS: Structure[] = ["map", "logic", "org", "tree"];
 
-export function Toolbar({ actions: a, view, setView, panel, togglePanel, laser, toggleLaser, prefs, setPrefs, openSearch }: { openSearch: () => void; actions: Actions; view: "map" | "outline"; setView: (v: "map" | "outline") => void; panel: boolean; togglePanel: () => void; laser: boolean; toggleLaser: () => void; prefs: ViewPrefs; setPrefs: (p: Partial<ViewPrefs>) => void }) {
+export function Toolbar({ position, actions: a, view, setView, panel, togglePanel, laser, toggleLaser, prefs, setPrefs, openSearch }: { position?:"top"|"bottom"|"left"|"right"; openSearch: () => void; actions: Actions; view: "map" | "outline"; setView: (v: "map" | "outline") => void; panel: boolean; togglePanel: () => void; laser: boolean; toggleLaser: () => void; prefs: ViewPrefs; setPrefs: (p: Partial<ViewPrefs>) => void }) {
   const topics = a.selection.filter((id) => !!getTopic(a.doc, id));
   const one = topics.length === 1;
   const ro = a.readOnly;
   const st = rootStructure(a.doc);
   const theme = docTheme(a.doc);
   return (
-    <div className="wm-toolbar">
+    <div data-position={position} className={"wm-toolbar"+(position==="left"||position==="right"?" wm-toolbar-vertical":"")}>
+      <style>{`.wm-toolbar-vertical{flex-direction:column;align-items:stretch;width:150px;overflow-y:auto;overflow-x:hidden;border-right:1px solid var(--wm-border)}.wm-toolbar-vertical .wm-tb-group{flex-direction:column;align-items:stretch}.wm-toolbar-vertical .wm-tb-sep{height:1px;width:100%;margin:4px 0}.wm-toolbar-vertical .wm-tb-spacer{flex:0}.wm-toolbar-vertical .wm-tb-btn{justify-content:flex-start;width:100%}.wm-toolbar-vertical .wm-popover{margin-left:140px;transform:none}.wm-toolbar-vertical[data-position="right"] .wm-popover{margin-left:-280px}`}</style>
       <div className="wm-tb-group">
         <Btn icon={<Icon.undo />} onClick={a.undo} disabled={!a.canUndo || ro} title={t("undo")} />
         <Btn icon={<Icon.redo />} onClick={a.redo} disabled={!a.canRedo || ro} title={t("redo")} />
@@ -76,6 +77,25 @@ export function Toolbar({ actions: a, view, setView, panel, togglePanel, laser, 
         <Btn icon={<Icon.boundary />} label={t("boundary")} onClick={() => a.addRange("boundaries")} disabled={ro || !topics.length || view !== "map"} />
         <Btn icon={<Icon.trash />} onClick={a.remove} disabled={ro || !a.selection.length || (a.selection.length === 1 && a.selection[0] === a.doc.root.id) || view !== "map"} title={`${t("remove")} (Delete)`} />
       </div>
+      <Menu icon={<Icon.settings />} label="更多">
+        {(close)=><div className="wm-menu-list">{[
+          ["lock",a.locked?"解锁编辑":"锁定只读",false],
+          ["study",a.studyMode?"退出学习模式":"学习模式",false],
+          ["notes",a.showNotes?"收起备注卡片":"展开备注卡片",false],
+          ["callouts",a.showCallouts?"隐藏标注":"显示标注",false],
+          ["outlineDock","切换大纲面板",false],
+          ["markers","标记",ro||!topics.length],
+          ["showAll","显示 / 隐藏已隐藏节点",false],
+          ["focus","聚焦选中分支",!one],
+          ["callout","添加 / 编辑标注",ro||!one],
+          ["calloutColor","标注颜色",ro||!one],
+          ["width","节点宽度",ro||!one],
+          ["split","按标点拆成子节点",ro||!one],
+          ["task","任务复选框",ro||!one],
+          ["answer","答案标记 🙈",ro||!one],
+          ["deleteOnly","仅删除节点，保留子节点",ro||!topics.length],
+        ].map(([command,label,disabled])=><button key={String(command)} disabled={!!disabled} onClick={()=>{a.feature(String(command));close();}}>{label}</button>)}</div>}
+      </Menu>
       <div className="wm-tb-spacer" />
       <div className="wm-tb-group">
         <Btn icon={<Icon.search />} onClick={openSearch} disabled={view !== "map"} title={`${t("find")} (${isMac ? "⌘F" : "Ctrl+F"})`} />
@@ -124,7 +144,7 @@ export function Toolbar({ actions: a, view, setView, panel, togglePanel, laser, 
       <div className="wm-tb-group">
         <Menu icon={<Icon.settings />} label={t("settings")} iconOnly alignRight>
           {(close) => (
-            <div className="wm-settings">
+            <div className="wm-settings" style={{maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
               <div className="wm-settings-title">{t("display")}</div>
               <Switch label={t("showBranches")} on={prefs.showBranches} onChange={(on) => setPrefs({ showBranches: on })} />
               <Switch label={t("showRelationships")} on={prefs.showRelationships} onChange={(on) => setPrefs({ showRelationships: on })} />

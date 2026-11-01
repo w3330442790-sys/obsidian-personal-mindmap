@@ -1,0 +1,436 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseMarkdown } from "../../src/markdown";
+import { DEFAULT_LAYOUT, layoutTree, Placed } from "../../src/layout";
+import { findByPath, walk } from "../../src/model";
+
+const measure = (n: { text: string; depth: number }) => ({ w: 20 + n.text.length * 8, h: n.depth === 0 ? 60 : 30 });
+
+const src = `# Root
+
+## A
+- a1
+- a2
+- a3
+
+## B
+
+## C
+- c1
+
+## D
+`;
+
+function overlaps(a: Placed, b: Placed): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+test("逻辑图：全部在右侧，父节点对子节点块居中，无重叠", () => {
+  const doc = parseMarkdown(src);
+  const res = layoutTree(doc.root, measure, { ...DEFAULT_LAYOUT, structure: "logic-right" });
+  const all = [...res.placed.values()];
+  assert.equal(all.length, 9);
+  for (const p of all) assert.equal(p.side, "right");
+  for (const p of all) if (p.node.depth > 0) assert.ok(p.x > 0, `${p.node.text} 应在根右侧`);
+  for (let i = 0; i < all.length; i++)
+    for (let j = i + 1; j < all.length; j++) assert.ok(!overlaps(all[i], all[j]), `${all[i].node.text} 与 ${all[j].node.text} 重叠`);
+  const a = res.placed.get(findByPath(doc.root, "0")!.id)!;
+  const a1 = res.placed.get(findByPath(doc.root, "0/0")!.id)!;
+  const a3 = res.placed.get(findByPath(doc.root, "0/2")!.id)!;
+  assert.ok(Math.abs(a.y + a.h / 2 - (a1.y + a3.y + a3.h) / 2) < 0.01, "A 应位于 a1..a3 的中心");
+  assert.equal(a1.x, a.x + a.w + DEFAULT_LAYOUT.gapLevel);
+  assert.equal(a.x, all[0].x + all[0].w + DEFAULT_LAYOUT.gapRoot);
+});
+
+test("思维导图：前一半在右、后一半在左且顺时针", () => {
+  const doc = parseMarkdown(src);
+  const res = layoutTree(doc.root, measure, { ...DEFAULT_LAYOUT, structure: "mindmap" });
+  const get = (path: string) => res.placed.get(findByPath(doc.root, path)!.id)!;
+  assert.equal(get("0").side, "right");
+  assert.equal(get("1").side, "right");
+  assert.equal(get("2").side, "left");
+  assert.equal(get("3").side, "left");
+  assert.ok(get("2").x + get("2").w < 0, "C 在根左侧");
+  assert.ok(get("3").y < get("2").y, "顺时针：D 在 C 上方");
+  assert.ok(get("2/0").x < get("2").x, "左侧的子节点继续向左延伸");
+});
+
+test("折叠的节点不参与布局", () => {
+  const doc = parseMarkdown(src.replace("## A", "## A %%fold%%"));
+  const res = layoutTree(doc.root, measure, DEFAULT_LAYOUT);
+  let total = 0;
+  walk(doc.root, () => total++);
+  assert.equal(total, 9);
+  assert.equal(res.placed.size, 6);
+});
+
+import { fromEditableText, plainText, toEditableText } from "../../src/inline";
+
+test("多行节点文本用 <br> 存储，编辑时还原成换行", () => {
+  assert.equal(fromEditableText("第一行\n  第二行  \n\n第三行"), "第一行<br>第二行<br>第三行");
+  assert.equal(toEditableText("a<br>b<br/>c"), "a\nb\nc");
+  assert.equal(plainText("a<br>**b**"), "a b");
+});
+
+test("组织结构图：子节点水平排在父节点下方并居中，无重叠", () => {
+  const doc = parseMarkdown(src);
+  const res = layoutTree(doc.root, measure, { ...DEFAULT_LAYOUT, structure: "org-down" });
+  const all = [...res.placed.values()];
+  const root = all[0];
+  for (const p of all) if (p.node.depth > 0) assert.ok(p.y > root.y + root.h, `${p.node.text} 应在根下方`);
+  for (let i = 0; i < all.length; i++)
+    for (let j = i + 1; j < all.length; j++) assert.ok(!overlaps(all[i], all[j]), `${all[i].node.text} 与 ${all[j].node.text} 重叠`);
+  const get = (path: string) => res.placed.get(findByPath(doc.root, path)!.id)!;
+  const a = get("0");
+  const a1 = get("0/0");
+  const a3 = get("0/2");
+  assert.equal(a.side, "down");
+  assert.ok(Math.abs(a.x + a.w / 2 - (a1.x + a3.x + a3.w) / 2) < 0.01, "A 应位于 a1..a3 的水平中心");
+  assert.ok(a1.x < get("0/1").x && get("0/1").x < a3.x, "兄弟从左到右");
+  assert.equal(a1.y, get("0/1").y, "兄弟同一行");
+});
+
+test("树形图：子节点向右缩进、逐个向下堆叠", () => {
+  const doc = parseMarkdown(src);
+  const res = layoutTree(doc.root, measure, { ...DEFAULT_LAYOUT, structure: "tree-right" });
+  const get = (path: string) => res.placed.get(findByPath(doc.root, path)!.id)!;
+  const root = res.placed.get(doc.root.id)!;
+  const a = get("0");
+  const b = get("1");
+  const a1 = get("0/0");
+  assert.equal(a.side, "tree");
+  assert.equal(a.x, root.x + 32);
+  assert.equal(a1.x, a.x + 32);
+  assert.ok(a1.y > a.y + a.h, "a1 在 A 下方");
+  assert.ok(b.y > get("0/2").y + get("0/2").h, "B 排在 A 的整棵子树之后");
+  const all = [...res.placed.values()];
+  for (let i = 0; i < all.length; i++)
+    for (let j = i + 1; j < all.length; j++) assert.ok(!overlaps(all[i], all[j]), `${all[i].node.text} 与 ${all[j].node.text} 重叠`);
+});
+
+test("plainText 会把图片语法化成文件名或 alt，供搜索用", () => {
+  assert.equal(plainText("看图 ![[a.png|120]] 和 ![封面](https://x/y.png)"), "看图 a.png 和 封面");
+});
+
+import { setImageWidth } from "../../src/inline";
+
+test("改写图片宽度参数：wiki 与 Markdown 两种写法，去参数时恢复", () => {
+  assert.equal(setImageWidth("看 ![[a.png]] 图", 200), "看 ![[a.png|200]] 图");
+  assert.equal(setImageWidth("![[a.png|160]]", 320), "![[a.png|320]]");
+  assert.equal(setImageWidth("![[a.png|160]]", null), "![[a.png]]");
+  assert.equal(setImageWidth("![[a.png|说明]]", 120), "![[a.png|说明|120]]");
+  assert.equal(setImageWidth("![封面](https://x/y.png)", 150), "![封面|150](https://x/y.png)");
+  assert.equal(setImageWidth("![封面|150](https://x/y.png)", null), "![封面](https://x/y.png)");
+  assert.equal(setImageWidth("没有图片", 100), "没有图片");
+});
+
+import { MARKER_GROUPS, splitMarkers, toggleMarker, toggleTask } from "../../src/inline";
+
+test("标记 emoji：同组互斥、再点移除、顺序固定", () => {
+  assert.equal(toggleMarker("任务", "2️⃣"), "2️⃣ 任务");
+  assert.equal(toggleMarker("2️⃣ 任务", "3️⃣"), "3️⃣ 任务", "优先级互斥");
+  assert.equal(toggleMarker("3️⃣ 任务", "3️⃣"), "任务", "再点移除");
+  assert.equal(toggleMarker("🚩 任务", "⭐"), "🚩 ⭐ 任务", "旗帜与符号可并存");
+  assert.equal(toggleMarker("⭐ 任务", "1️⃣"), "1️⃣ ⭐ 任务", "优先级排在前面");
+  assert.deepEqual(splitMarkers("1️⃣ ✅ 完成 [x] 事"), { markers: ["1️⃣", "✅"], rest: "完成 [x] 事" });
+  assert.ok(MARKER_GROUPS.length >= 4);
+});
+
+test("任务复选框切换：点复选框只在空和勾之间来回，不会把复选框去掉；标记保留在前面", () => {
+  assert.equal(toggleTask("事项"), "[ ] 事项");
+  assert.equal(toggleTask("[ ] 事项"), "[x] 事项");
+  assert.equal(toggleTask("[x] 事项"), "[ ] 事项");
+  assert.equal(toggleTask("[X] 事项"), "[ ] 事项");
+  assert.equal(toggleTask("🚩 [ ] 事项"), "🚩 [x] 事项");
+  assert.equal(toggleTask("[ ] 事项", "add-remove"), "事项");
+  assert.equal(toggleTask("[x] 事项", "add-remove"), "事项");
+});
+
+test("聚焦分支时布局按相对深度算间距", () => {
+  const doc = parseMarkdown(src);
+  const a = findByPath(doc.root, "0")!;
+  const res = layoutTree(a, measure, { ...DEFAULT_LAYOUT, structure: "logic-right" });
+  const pa = res.placed.get(a.id)!;
+  const a1 = res.placed.get(findByPath(doc.root, "0/0")!.id)!;
+  assert.equal(pa.x, -pa.w / 2, "聚焦节点当作根放在原点");
+  assert.equal(a1.x, pa.x + pa.w + DEFAULT_LAYOUT.gapRoot, "它的子节点用根到主主题的间距");
+  assert.equal(res.placed.size, 4);
+});
+
+import { bareId, iconIdOf, isEmojiValue } from "../../src/icon-value";
+
+test("图标值的识别：图标名、emoji、以及不该被误判的网址", () => {
+  assert.equal(iconIdOf("lucide:mindmap-tree"), "mindmap-tree");
+  assert.equal(iconIdOf("network"), "network");
+  assert.equal(iconIdOf("🧠"), null);
+  assert.equal(isEmojiValue("🧠"), true);
+  assert.equal(isEmojiValue("emoji:🧠"), true);
+  assert.equal(isEmojiValue("lucide:mindmap-tree"), false);
+  // 属性面板上别人写的网址不能被当成 emoji，否则链接样式会被抹掉
+  assert.equal(isEmojiValue("https://example.com"), false);
+  assert.equal(isEmojiValue("obsidian://open?vault=x"), false);
+  assert.equal(iconIdOf("https://example.com"), null);
+  assert.equal(bareId("lucide-network"), "network");
+  assert.equal(bareId("mindmap-tree"), "mindmap-tree");
+});
+
+test("外框：框住子树，同层兄弟让出留白不重叠，各结构都成立", () => {
+  const md = `# Root
+
+## A %%box "标题"%%
+- a1
+- a2 %%box=2%%
+- a3
+
+## B
+
+## C %%box%%
+- c1
+`;
+  for (const structure of ["logic-right", "mindmap", "org-down", "tree-right"] as const) {
+    const doc = parseMarkdown(md);
+    const res = layoutTree(doc.root, measure, { ...DEFAULT_LAYOUT, structure });
+    const byText = (t: string) => [...res.placed.values()].find((p) => p.node.text === t)!;
+    const boxOf = (t: string) => res.boxes.find((b) => b.start.text === t)!;
+    assert.equal(res.boxes.length, 3, structure);
+    const inside = (p: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      p.x >= b.x && p.y >= b.y && p.x + p.w <= b.x + b.w && p.y + p.h <= b.y + b.h;
+    const boxA = boxOf("A");
+    for (const t of ["A", "a1", "a2", "a3"]) assert.ok(inside(byText(t), boxA), `${structure}: ${t} 应在 A 的外框里`);
+    const inner = boxOf("a2");
+    assert.ok(inside(byText("a2"), inner) && inside(byText("a3"), inner) && !inside(byText("a1"), inner), structure);
+    assert.ok(inside(inner, boxA), `${structure}: 里层外框应在外层里面`);
+    // 没框住的兄弟不能压进外框
+    assert.ok(!inside(byText("B"), boxA) && !inside(byText("B"), boxOf("C")), structure);
+    const bx = byText("B");
+    const overlapsBox = (b: typeof boxA) => bx.x < b.x + b.w && b.x < bx.x + bx.w && bx.y < b.y + b.h && b.y < bx.y + bx.h;
+    assert.ok(!overlapsBox(boxA) && !overlapsBox(boxOf("C")), `${structure}: B 与外框重叠`);
+    // 整体范围包含外框
+    for (const b of res.boxes) assert.ok(inside(b, res.bounds), structure);
+  }
+});
+
+test("左右分布：%%left%% / %%right%% 固定在那边，其余按数量补齐；没标时和以前一样前一半在右", async () => {
+  const { splitSides } = await import("../../src/layout");
+  const names = (xs: { text: string }[]) => xs.map((x) => x.text).join("");
+  const plain = parseMarkdown("# R\n\n## A\n\n## B\n\n## C\n\n## D\n");
+  let s = splitSides(plain.root.children);
+  assert.equal(names(s.right) + "|" + names(s.left), "AB|CD");
+  const marked = parseMarkdown("# R\n\n## A %%left%%\n\n## B\n\n## C\n\n## D\n");
+  s = splitSides(marked.root.children);
+  assert.equal(names(s.right) + "|" + names(s.left), "BC|AD");
+  const allLeft = parseMarkdown("# R\n\n## A %%left%%\n\n## B %%left%%\n\n## C %%left%%\n");
+  s = splitSides(allLeft.root.children);
+  assert.equal(names(s.right) + "|" + names(s.left), "|ABC");
+  const res = layoutTree(allLeft.root, measure, { ...DEFAULT_LAYOUT, structure: "mindmap" });
+  for (const c of allLeft.root.children) assert.equal(res.placed.get(c.id)!.side, "left");
+});
+
+test("折线拐角：默认圆角，半径 0 时拐点就是直角", async () => {
+  const { edgePath } = await import("../../src/layout");
+  const parent = { node: null as never, x: 0, y: 0, w: 40, h: 20, side: "right" as const };
+  const child = { node: null as never, x: 100, y: 80, w: 40, h: 20, side: "right" as const };
+  const g = { parent, child, x1: 40, y1: 10, x2: 100, y2: 90 };
+  assert.match(edgePath(g, "elbow"), /Q70,10 70,18/);
+  const sharp = edgePath(g, "elbow", 0);
+  assert.match(sharp, /L70,10 Q70,10 70,10 L70,90/);
+});
+
+test("概要：括号在被括分支外侧，不压节点、不挪节点，整体范围包含括号和文字，各结构都成立", () => {
+  const md = `# Root
+
+## A %%summary=2 "AB"%%
+- a1 %%summary "一"%%
+- a2
+
+## B
+- b1 %%box%%
+
+## C
+- c1
+`;
+  const plain = md.replace(/ %%summary[^%]*%%/g, "");
+  const ms = () => ({ w: 40, h: 20 });
+  for (const structure of ["logic-right", "mindmap", "org-down", "tree-right"] as const) {
+    const res = layoutTree(parseMarkdown(md).root, measure, { ...DEFAULT_LAYOUT, structure }, ms);
+    const base = layoutTree(parseMarkdown(plain).root, measure, { ...DEFAULT_LAYOUT, structure });
+    const pos = (r: typeof res) => [...r.placed.values()].map((p) => `${p.node.text}@${p.x},${p.y}`).sort().join(" ");
+    assert.equal(pos(res), pos(base), `${structure}: 加概要不应挪动节点`);
+    assert.equal(res.summaries.length, 2, structure);
+    const hit = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    const inside = (p: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      p.x >= b.x && p.y >= b.y && p.x + p.w <= b.x + b.w && p.y + p.h <= b.y + b.h;
+    for (const s of res.summaries) {
+      for (const p of res.placed.values()) {
+        assert.ok(!hit(s.brace, p), `${structure}: 括号压到了 ${p.node.text}`);
+        if (s.label) assert.ok(!hit(s.label, p), `${structure}: 概要文字压到了 ${p.node.text}`);
+      }
+      assert.ok(inside(s.brace, res.bounds), structure);
+      if (s.label) assert.ok(inside(s.label, res.bounds), structure);
+    }
+    // A、B 的概要括住 A、B 两整支（含 b1 的外框）：括号在它们最外侧
+    const ab = res.summaries.find((s) => s.start.text === "A")!;
+    const members: { x: number; y: number; w: number; h: number }[] = [];
+    for (const m of ab.members) walk(m, (n) => {
+      const p = res.placed.get(n.id);
+      if (p) members.push(p);
+    });
+    for (const b of res.boxes) members.push(b);
+    if (ab.side === "down") for (const p of members) assert.ok(ab.brace.y >= p.y + p.h, `${structure}: 括号应在下方`);
+    else if (ab.side === "left") for (const p of members) assert.ok(ab.brace.x + ab.brace.w <= p.x, `${structure}: 括号应在左侧`);
+    else for (const p of members) assert.ok(ab.brace.x >= p.x + p.w, `${structure}: 括号应在右侧`);
+  }
+});
+
+test("自由主题：不进主树、按位置单独排；主树坐标和去掉它时一样；左右分布时左边的向左展开；边界包含它", async () => {
+  const { layoutMap } = await import("../../src/layout");
+  const withFloat = `# Root\n\n## A\n- a1\n\n## B\n\n## 浮 %%float x=400 y=-200%%\n- f1\n- f2\n\n## 左浮 %%float x=-500 y=100%%\n- g1\n`;
+  const without = `# Root\n\n## A\n- a1\n\n## B\n`;
+  for (const structure of ["logic-right", "mindmap", "org-down", "tree-right"] as const) {
+    const d1 = parseMarkdown(withFloat);
+    const d2 = parseMarkdown(without);
+    const r1 = layoutMap(d1.root, measure, { ...DEFAULT_LAYOUT, structure });
+    const r2 = layoutMap(d2.root, measure, { ...DEFAULT_LAYOUT, structure });
+    // 主树（中心主题、A、a1、B）位置不受自由主题影响
+    for (const path of ["", "0", "0/0", "1"]) {
+      const p1 = r1.placed.get(findByPath(d1.root, path)!.id)!;
+      const p2 = r2.placed.get(findByPath(d2.root, path)!.id)!;
+      assert.deepEqual([p1.x, p1.y, p1.w, p1.h], [p2.x, p2.y, p2.w, p2.h], `${structure} ${path}`);
+    }
+    const f = findByPath(d1.root, "2")!;
+    const pf = r1.placed.get(f.id)!;
+    assert.ok(r1.floating?.has(f), "标成自由主题");
+    assert.ok(Math.abs(pf.x + pf.w / 2 - 400) < 0.01 && Math.abs(pf.y + pf.h / 2 + 200) < 0.01, `${structure} 自由主题中心在 (400,-200)`);
+    const kid = r1.placed.get(f.children[0].id)!;
+    if (structure === "org-down") assert.ok(kid.y > pf.y + pf.h, "组织结构图向下展开");
+    else assert.ok(kid.x > pf.x, `${structure} 向右展开`);
+    const g = findByPath(d1.root, "3")!;
+    const pg = r1.placed.get(g.id)!;
+    const gk = r1.placed.get(g.children[0].id)!;
+    if (structure === "mindmap") assert.ok(gk.x + gk.w <= pg.x && gk.side === "left", "左右分布时左边的自由主题向左展开");
+    const b = r1.bounds;
+    for (const p of r1.placed.values()) assert.ok(p.x >= b.x - 0.01 && p.y >= b.y - 0.01 && p.x + p.w <= b.x + b.w + 0.01 && p.y + p.h <= b.y + b.h + 0.01, `${structure} 边界包含 ${p.node.text}`);
+  }
+});
+
+test("自由主题：外框不会跨过它；聚焦分支时不参与", async () => {
+  const { layoutMap } = await import("../../src/layout");
+  const doc = parseMarkdown(`# Root\n\n## A %%box=3%%\n\n## 浮 %%float x=600 y=0%%\n\n## B\n`);
+  const r = layoutMap(doc.root, measure, { ...DEFAULT_LAYOUT, structure: "logic-right" });
+  assert.equal(r.boxes.length, 1);
+  const box = r.boxes[0];
+  assert.deepEqual(box.members.map((m) => m.text), ["A", "B"]);
+  const pf = r.placed.get(findByPath(doc.root, "1")!.id)!;
+  assert.ok(pf.x > box.x + box.w, "外框没有把自由主题框进去");
+  const focus = findByPath(doc.root, "0")!;
+  const rf = layoutMap(focus, measure, { ...DEFAULT_LAYOUT, structure: "logic-right" });
+  assert.ok(!rf.floating?.size);
+});
+
+test("标注：气泡不压任何节点和别的气泡，连线和尖角不穿过气泡，外框、概要、边界都包含它，各结构都成立", async () => {
+  const { layoutMap, CALLOUT_GAP } = await import("../../src/layout");
+  const md = `# Root %%callout "中心的标注"%%
+
+## A %%callout "短"%%
+- a1 %%callout "这是一段很长很长很长的标注文字，比节点宽很多"%%
+	- a1x
+	- a1y
+- a2 %%box callout "框里的"%%
+- a3
+
+## B %%callout "第一行<br>第二行<br>第三行"%%
+- b1
+- b2 %%summary "小结" callout "被括住的"%%
+
+## C
+- c1
+
+## D %%callout "D 的标注也挺长的一段文字"%%
+
+## 浮 %%float x=500 y=-300 callout "自由主题的"%%
+- f1 %%callout "f1 的"%%
+`;
+  const measureCo = (n: { callout?: string }) => {
+    const lines = (n.callout ?? "").split("\n");
+    return { w: Math.min(240, 16 + Math.max(...lines.map((l) => l.length)) * 12), h: 8 + 20 * lines.length };
+  };
+  type R = { x: number; y: number; w: number; h: number };
+  const hit = (a: R, b: R) => a.x < b.x + b.w - 0.01 && b.x < a.x + a.w - 0.01 && a.y < b.y + b.h - 0.01 && b.y < a.y + a.h - 0.01;
+  /** 轴对齐线段 → 细矩形 */
+  const seg = (x1: number, y1: number, x2: number, y2: number): R => ({ x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1) || 0.02, h: Math.abs(y2 - y1) || 0.02 });
+  for (const structure of ["logic-right", "mindmap", "org-down", "tree-right"] as const) {
+    const doc = parseMarkdown(md);
+    const res = layoutMap(doc.root, measure, { ...DEFAULT_LAYOUT, structure }, () => ({ w: 40, h: 20 }), measureCo);
+    const nodes = [...res.placed.values()];
+    const cos = res.callouts;
+    const withCallout: string[] = [];
+    walk(doc.root, (n) => {
+      if (n.callout) withCallout.push(n.text);
+    });
+    assert.equal(cos.length, withCallout.length, `${structure} 每个标注都排上了`);
+    // 气泡之间、气泡和节点之间不重叠
+    for (const c of cos) {
+      for (const p of nodes) assert.ok(!hit(c, p), `${structure} 「${c.node.text}」的标注压到了节点 ${p.node.text}`);
+      for (const d of cos) if (d !== c) assert.ok(!hit(c, d), `${structure} 「${c.node.text}」和「${d.node.text}」的标注重叠`);
+    }
+    // 气泡在自己节点的上方（尖角能竖直落到节点顶边）或右边
+    for (const c of cos) {
+      const p = res.placed.get(c.node.id)!;
+      if (c.dir === "up") {
+        assert.ok(c.y + c.h <= p.y - CALLOUT_GAP + 0.01, `${structure} ${c.node.text} 的标注在节点上方`);
+        assert.ok(Math.min(c.x + c.w, p.x + p.w) - Math.max(c.x, p.x) > 4, `${structure} ${c.node.text} 的标注和节点横向有交叠`);
+        const tx = (Math.max(c.x, p.x) + Math.min(c.x + c.w, p.x + p.w)) / 2;
+        const tail = seg(tx, c.y + c.h, tx, p.y);
+        for (const q of nodes) if (q !== p) assert.ok(!hit(tail, q), `${structure} ${c.node.text} 的尖角穿过节点 ${q.node.text}`);
+        for (const d of cos) if (d !== c) assert.ok(!hit(tail, d), `${structure} ${c.node.text} 的尖角穿过 ${d.node.text} 的标注`);
+      } else {
+        assert.ok(c.x >= p.x + p.w + CALLOUT_GAP - 0.01, `${structure} ${c.node.text} 的标注在节点右边`);
+      }
+    }
+    // 折线连线不从气泡里穿过
+    const { edgeGeometry } = await import("../../src/layout");
+    for (const child of nodes) {
+      const parentNode = child.node.parent;
+      if (!parentNode || res.floating?.has(child.node)) continue;
+      const parent = res.placed.get(parentNode.id)!;
+      const e = edgeGeometry(parent, child);
+      const segs: R[] =
+        child.side === "tree"
+          ? [seg(e.x1, e.y1, e.x1, e.y2), seg(e.x1, e.y2, e.x2, e.y2)]
+          : child.side === "down"
+            ? [seg(e.x1, e.y1, e.x1, (e.y1 + e.y2) / 2), seg(e.x1, (e.y1 + e.y2) / 2, e.x2, (e.y1 + e.y2) / 2), seg(e.x2, (e.y1 + e.y2) / 2, e.x2, e.y2)]
+            : [seg(e.x1, e.y1, (e.x1 + e.x2) / 2, e.y1), seg((e.x1 + e.x2) / 2, e.y1, (e.x1 + e.x2) / 2, e.y2), seg((e.x1 + e.x2) / 2, e.y2, e.x2, e.y2)];
+      for (const c of cos) for (const sg of segs) assert.ok(!hit(sg, c), `${structure} ${parentNode.text}→${child.node.text} 的连线穿过 ${c.node.text} 的标注`);
+    }
+    // 外框包住成员的标注；整体边界包含所有标注
+    for (const b of res.boxes)
+      for (const m of b.members) {
+        const c = cos.find((x) => x.node === m);
+        if (c) assert.ok(c.x >= b.x && c.y >= b.y && c.x + c.w <= b.x + b.w && c.y + c.h <= b.y + b.h, `${structure} 外框包住 ${m.text} 的标注`);
+      }
+    for (const s of res.summaries)
+      for (const m of s.members) {
+        const c = cos.find((x) => x.node === m);
+        if (c && s.side !== "down") assert.ok(c.y >= s.brace.y - 0.01 && c.y + c.h <= s.brace.y + s.brace.h + 0.01, `${structure} 概要括住 ${m.text} 的标注`);
+      }
+    const b = res.bounds;
+    for (const c of cos) assert.ok(c.x >= b.x - 0.01 && c.y >= b.y - 0.01 && c.x + c.w <= b.x + b.w + 0.01 && c.y + c.h <= b.y + b.h + 0.01, `${structure} 边界包含 ${c.node.text} 的标注`);
+  }
+});
+
+test("标注：隐藏时（尺寸函数返回 null）排布和没有标注一模一样", async () => {
+  const { layoutMap } = await import("../../src/layout");
+  const a = parseMarkdown(`# R %%callout "x"%%\n\n## A %%callout "y"%%\n- a1 %%callout "z"%%\n\n## B\n`);
+  const b = parseMarkdown(`# R\n\n## A\n- a1\n\n## B\n`);
+  for (const structure of ["logic-right", "mindmap", "org-down", "tree-right"] as const) {
+    const ra = layoutMap(a.root, measure, { ...DEFAULT_LAYOUT, structure }, undefined, () => null);
+    const rb = layoutMap(b.root, measure, { ...DEFAULT_LAYOUT, structure });
+    assert.equal(ra.callouts.length, 0);
+    for (const path of ["", "0", "0/0", "1"]) {
+      const pa = ra.placed.get(findByPath(a.root, path)!.id)!;
+      const pb = rb.placed.get(findByPath(b.root, path)!.id)!;
+      assert.deepEqual([pa.x, pa.y], [pb.x, pb.y], `${structure} ${path}`);
+    }
+  }
+});

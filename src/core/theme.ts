@@ -5,7 +5,14 @@ import { DEFAULT_FILL_STYLE, FillStyle, LineStyle, Look, MindDoc, Shape, Style, 
 export type TopicKind = "root" | "main" | "sub" | "floating" | "summary";
 
 /** 颜色可以是具体值,也可以是 "branch"(用分支色)/ "tint"(分支色的浅色)/ "auto"(按底色自动黑白)/ "none" */
-interface LevelStyle {
+export interface LevelStyle {
+  italic?: boolean;
+  lineColor?: string;
+  lineStyle?: LineStyle;
+  maxWidth?: number;
+  radius?: number;
+  borderDashed?: boolean;
+  align?: boolean;
   shape: Shape;
   fill: string;
   border: string;
@@ -19,6 +26,11 @@ interface LevelStyle {
 }
 
 export interface Palette {
+  lineDashed?:boolean;
+  lineSharp?:boolean;
+  tierStyles?: LevelStyle[];
+  keepUnderline?: boolean;
+  spacing?: "compact" | "normal" | "loose";
   background: string;
   /** 子主题等「无底色」文字的颜色 */
   text: string;
@@ -42,6 +54,12 @@ export interface ThemeDef {
 }
 
 export interface ResolvedStyle {
+  lineDashed?:boolean;
+  lineSharp?:boolean;
+  maxWidth?: number;
+  radius?: number;
+  borderDashed?: boolean;
+  align?: boolean;
   kind: TopicKind;
   depth: number;
   branchColor: string;
@@ -256,6 +274,94 @@ export const THEMES: ThemeDef[] = [
   },
 ];
 
+
+/** Gogoga themes use a prefix so existing .wmind theme IDs retain their meaning. */
+export type FusionThemeName = "snow" | "rainbow" | "business" | "warm" | "mono" | "line" | "forest";
+export interface FusionTierStyle {
+  fontSize:number; bold:boolean; italic:boolean; color:string; fill:string|null;
+  underline:boolean; radius:number; borderStyle:"none"|"solid"|"dashed";
+  borderWidth:number; borderColor:string; maxWidth:number|null; align:boolean;
+  lineColor:string; lineWidth:number;
+}
+export interface FusionCustomTheme {
+  id:string; name:string; base:FusionThemeName; edge:LineStyle; sharp:boolean; dashed:boolean;
+  branchColors:boolean; spacing:"compact"|"normal"|"loose"; tiers:FusionTierStyle[];
+}
+const GOGOGA_BRANCHES = ["#f76c6c","#ffa36b","#8ccba4","#7fe0d3","#62cff4","#d98cf2"];
+const GOGOGA_DARK_BRANCHES = ["#e26262","#e8955f","#6fb88c","#5fc9bb","#4fb8dd","#c47ee0"];
+function gogogaPalette(name:FusionThemeName,dark:boolean):Palette {
+  const text=dark?"#e3e3e8":"#1f1f1f", bg=dark?"#1e1e1e":"#ffffff";
+  let root=lv(ROOT,{fill:dark?"#5c6bc0":"#3f51b5",textColor:"#ffffff",padX:32,padY:18,fontSize:26});
+  let main=lv(MAIN,{fill:dark?"#30303a":"#e9e9ef",textColor:text,bold:true,padX:16,padY:10});
+  let sub=lv(SUB,{shape:"rounded",fill:dark?"#2a2a31":"#f1f1f4",border:"none",borderWidth:0,textColor:text,padX:10,padY:6});
+  let line=dark?"#c9c9d1":"#2b2b2b",edge:LineStyle="elbow",rainbow=[line];
+  if(name==="rainbow"){
+    rainbow=dark?GOGOGA_DARK_BRANCHES:GOGOGA_BRANCHES;edge="curve";
+    root=lv(root,{fill:"none",textColor:text,fontSize:28,padX:20,padY:12});
+    main=lv(main,{fill:"branch",textColor:dark?"#f5f5f5":"#1f1f1f",fontSize:16,bold:false});
+    sub=lv(sub,{shape:"underline",fill:"none",border:"branch",borderWidth:1.5});
+  } else if(name==="business"){
+    line=dark?"#7d8da3":"#64748b";rainbow=[line];
+    root=lv(root,{fill:dark?"#24405f":"#1e3a5f",fontSize:24,radius:4});
+    main=lv(main,{fill:dark?"#2c5282":"#2b6cb0",textColor:"#ffffff",fontSize:16,bold:false,radius:4});
+    sub=lv(sub,{fill:dark?"#232a35":"#eef2f7",textColor:dark?"#e2e8f0":"#1a202c",fontSize:13,radius:3});
+  } else if(name==="warm"){
+    line=dark?"#c08d6a":"#a3714f";rainbow=[line];edge="curve";
+    root=lv(root,{fill:dark?"#9a3412":"#c2410c",textColor:"#fff7ed",padX:30,padY:16,radius:18});
+    main=lv(main,{fill:dark?"#57320f":"#fed7aa",textColor:dark?"#fed7aa":"#7c2d12",padX:18,padY:9,radius:14});
+    sub=lv(sub,{fill:dark?"#33241a":"#fff7ed",textColor:dark?"#fde3c7":"#431407",padX:12,radius:10});
+  } else if(name==="mono"){
+    line=dark?"#71717a":"#a1a1aa";rainbow=[line];
+    root=lv(root,{fill:dark?"#fafafa":"#18181b",textColor:dark?"#18181b":"#fafafa",fontSize:22,radius:2,lineWidth:1.5});
+    main=lv(main,{fill:"none",textColor:dark?"#f4f4f5":"#18181b",fontSize:15,radius:2,lineWidth:1.25});
+    sub=lv(sub,{fill:"none",textColor:dark?"#d4d4d8":"#27272a",border:dark?"#3f3f46":"#d4d4d8",borderWidth:1,fontSize:13,radius:2,lineWidth:1});
+  } else if(name==="forest"){
+    line=dark?"#7aa04a":"#4d7c0f";edge="curve";
+    rainbow=dark?["#6aa878","#86ab68","#5ea48f","#9aab63","#6ba299","#8aa87e"]:["#a7e0b0","#bfe5a0","#93ddc8","#d9e8a0","#a3d9d0","#c7e3b8"];
+    root=lv(root,{fill:dark?"#1a4d33":"#14532d",textColor:"#ecfdf5",radius:12});
+    main=lv(main,{fill:"branch",textColor:dark?"#0f2d1a":"#14532d",radius:10});
+    sub=lv(sub,{fill:dark?"#1f2c22":"#f0fdf4",textColor:dark?"#d6f0dc":"#14532d",radius:8});
+  } else if(name==="line"){
+    line=dark?"#d4d4d8":"#52525b";rainbow=[line];
+    root=lv(root,{fill:dark?"#52525b":"#e4e4e7",textColor:dark?"#fafafa":"#18181b",border:dark?"#d4d4d8":"#a1a1aa",borderWidth:1,fontSize:22,bold:false,padX:24,padY:12});
+    main=lv(main,{fill:"none",fontSize:15,bold:false,padX:10,padY:4});
+    sub=lv(sub,{fill:"none",fontSize:14,padX:9,padY:4});
+  }
+  root={...root,lineColor:line,lineStyle:name==="snow"?"curve":edge};
+  main={...main,lineColor:name==="rainbow"||name==="forest"?"branch":line,lineStyle:edge};
+  sub={...sub,lineColor:name==="rainbow"||name==="forest"?"branch":line,lineStyle:edge};
+  return palette({background:bg,text,rainbow,relationship:line,lineStyle:edge,root,main,sub,floating:main,summary:lv(SUMMARY,{textColor:text}),keepUnderline:true});
+}
+const GOGOGA_NAMES:Record<FusionThemeName,[string,string]>={snow:["雪松","Snow"],rainbow:["彩虹","Rainbow"],business:["商务","Business"],warm:["暖阳","Warm"],mono:["极简","Minimal"],line:["线条","Line"],forest:["森林","Forest"]};
+for(const [name,labels] of Object.entries(GOGOGA_NAMES))THEMES.push({id:`gogoga-${name}`,zh:`${labels[0]} · Gogoga`,en:`${labels[1]} · Gogoga`,light:gogogaPalette(name as FusionThemeName,false),dark:gogogaPalette(name as FusionThemeName,true)});
+const builtinThemeCount=THEMES.length;
+/** Same automatic dark conversion used by Gogoga's custom-theme editor. */
+function customDark(color:string,role:"fill"|"text"|"stroke"):string {
+  const m=/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color);if(!m)return color;
+  const hex=m[1].length===3?m[1].replace(/./g,c=>c+c):m[1];
+  const [r,g,b]=[0,2,4].map(i=>parseInt(hex.slice(i,i+2),16)/255),max=Math.max(r,g,b),min=Math.min(r,g,b),l=(max+min)/2,d=max-min;
+  let h=0,s=0;if(d){s=l>.5?d/(2-max-min):d/(max+min);h=(max===r?(g-b)/d+(g<b?6:0):max===g?(b-r)/d+2:(r-g)/d+4)*60;}
+  if(role==="fill"){if(l<=.55)return color;s*=.45;return `hsl(${Math.round(h)}, ${Math.round(s*100)}%, ${Math.round((.16+(1-l)*.35)*100)}%)`;}
+  if(role==="text"){if(l>=.5)return color;s=Math.min(s,.25);return `hsl(${Math.round(h)}, ${Math.round(s*100)}%, 88%)`;}
+  if(l>=.45)return color;return `hsl(${Math.round(h)}, ${Math.round(s*.7*100)}%, 68%)`;
+}
+function customPalette(theme:FusionCustomTheme,dark:boolean):Palette {
+  const base=gogogaPalette(theme.base in GOGOGA_NAMES?theme.base:"snow",dark);
+  const col=(c:string,role:"fill"|"text"|"stroke")=>dark?customDark(c,role):c;
+  const tiers=Array.from({length:4},(_,i)=>{
+    const t=theme.tiers[i]??theme.tiers[theme.tiers.length-1];const fallback=i===0?base.root:i===1?base.main:base.sub;if(!t)return fallback;
+    return lv(fallback,{shape:t.underline?"underline":t.radius===0?"rect":"rounded",fontSize:Number.isFinite(t.fontSize)?Math.max(8,Math.min(96,t.fontSize)):fallback.fontSize,bold:!!t.bold,italic:!!t.italic,textColor:col(t.color??base.text,"text"),fill:t.underline?"none":theme.branchColors&&i===1?"branch":t.fill?col(t.fill,"fill"):"none",border:t.borderStyle==="none"?"none":col(t.borderColor??base.text,"stroke"),borderWidth:t.borderWidth??0,lineColor:col(t.lineColor??base.relationship,"stroke"),lineWidth:t.lineWidth??1.5,lineStyle:theme.edge,maxWidth:t.maxWidth??undefined,radius:t.radius,borderDashed:t.borderStyle==="dashed",align:t.align});
+  });
+  return {...base,lineDashed:theme.dashed,lineSharp:theme.sharp,lineStyle:theme.edge,tierStyles:tiers,root:tiers[0],main:tiers[1],sub:tiers[2],floating:tiers[0],rainbow:theme.branchColors?base.rainbow:[base.relationship],spacing:theme.spacing,keepUnderline:true};
+}
+/** Replaces only the custom registry; document objects and original theme definitions are untouched. */
+export function registerFusionThemes(settings:{customThemes?:readonly FusionCustomTheme[]}|readonly FusionCustomTheme[]):void {
+  const list=Array.isArray(settings)?settings:(settings as {customThemes?:readonly FusionCustomTheme[]}).customThemes??[];
+  const seen=new Set<string>();const custom:ThemeDef[]=[];
+  for(const theme of list){if(!theme.id?.startsWith("custom-")||seen.has(theme.id)||!Array.isArray(theme.tiers))continue;seen.add(theme.id);custom.push({id:theme.id,zh:theme.name,en:theme.name,light:customPalette(theme,false),dark:customPalette(theme,true)});}
+  THEMES.splice(builtinThemeCount,THEMES.length-builtinThemeCount,...custom);
+}
+
 export function getTheme(id: string): ThemeDef {
   return THEMES.find((t) => t.id === id) ?? THEMES[0];
 }
@@ -313,9 +419,10 @@ export function withAlpha(hex: string, a: number): string {
 function resolveLevel(p: Palette, kind: TopicKind, depth: number, branchColor: string, own: Style | undefined, hasChildren = false, look: Look = "standard", fillDefault: FillStyle = DEFAULT_FILL_STYLE): ResolvedStyle {
   const s = cleanStyle(own);
   // 下划线子主题若还有下级,线会像树枝一样从横线上岔出去,默认改成圆角框
-  const base = kind === "sub" && hasChildren && !s.shape && p.sub.shape === "underline"
-    ? { ...p.sub, shape: "rounded" as Shape, padX: 10, padY: 6 }
-    : p[kind];
+  const level = p.tierStyles && kind !== "summary" ? p.tierStyles[Math.min(depth,3)] ?? p[kind] : p[kind];
+  const base = kind === "sub" && hasChildren && !s.shape && level.shape === "underline" && !p.keepUnderline
+    ? { ...level, shape: "rounded" as Shape, padX: 10, padY: 6 }
+    : level;
   const pick = (v: string) => (v === "branch" ? branchColor : v === "tint" ? tint(branchColor, p.background) : v === "text" ? p.text : v);
   const hand = look === "hand";
   const fillStyle: FillStyle = hand ? ((s.fillStyle as FillStyle | undefined) ?? fillDefault) : "solid";
@@ -347,17 +454,19 @@ function resolveLevel(p: Palette, kind: TopicKind, depth: number, branchColor: s
     fontSize: s.fontSize ?? base.fontSize,
     // Excalifont 没有粗体,手绘时只在用户明确要求时加粗
     bold: s.bold ?? (hand ? false : base.bold),
-    italic: s.italic ?? false,
+    italic: s.italic ?? base.italic ?? false,
     strike: s.strike ?? false,
-    lineColor: (s.lineColor as string | undefined) ?? branchColor,
+    lineColor: (s.lineColor as string | undefined) ?? (base.lineColor ? pick(base.lineColor) : branchColor),
     lineWidth: s.lineWidth ?? base.lineWidth,
-    lineStyle: (s.lineStyle as LineStyle | undefined) ?? p.lineStyle,
+    lineStyle: (s.lineStyle as LineStyle | undefined) ?? base.lineStyle ?? p.lineStyle,
     fontFamily: hand ? HAND_FONT : p.fontFamily,
     padX: base.padX,
     padY: base.padY,
     hand,
     fillStyle,
     textAlign: (s.textAlign as TextAlign | undefined) ?? "center",
+    lineDashed:p.lineDashed,lineSharp:p.lineSharp,
+    maxWidth: base.maxWidth, radius: base.radius, borderDashed: base.borderDashed, align: base.align,
   };
 }
 

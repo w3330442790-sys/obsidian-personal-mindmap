@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "theme": "gogoga-snow",
+  "structure": "map",
+  "root": {
+    "id": "root",
+    "text": "融合 Mindmap 快速上手",
+    "children": [
+      {
+        "id": "format",
+        "text": "完整格式与排版",
+        "children": [
+          {
+            "id": "style",
+            "text": "右侧格式面板：形状、颜色、字体",
+            "style": {
+              "shape": "ellipse"
+            }
+          },
+          {
+            "id": "hand",
+            "text": "画布可切换手绘风格"
+          }
+        ],
+        "boundaries": [
+          {
+            "id": "box",
+            "from": "style",
+            "to": "hand",
+            "text": "保留原版能力"
+          }
+        ]
+      },
+      {
+        "id": "markdown",
+        "text": "Markdown 和双链",
+        "children": [
+          {
+            "id": "link",
+            "text": "Ctrl+K 选择或新建笔记"
+          },
+          {
+            "id": "embed",
+            "text": "代码块与笔记嵌入"
+          }
+        ]
+      },
+      {
+        "id": "study",
+        "text": "背诵与备注",
+        "callout": "更多菜单中开启背诵模式",
+        "children": [
+          {
+            "id": "highlight",
+            "text": "点击 ==高亮答案== 揭晓"
+          },
+          {
+            "id": "answer",
+            "text": "🙈 答案分支",
+            "note": "这段备注在背诵时也会遮住。"
+          },
+          {
+            "id": "mcq",
+            "text": "哪种文件支持完整格式？",
+            "children": [
+              {
+                "id": "correct",
+                "text": "[x] .wmind"
+              },
+              {
+                "id": "wrong",
+                "text": "[ ] .txt"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "export",
+        "text": "导入与导出",
+        "note": "可以打开 .xmind 多工作表，并转换为 Markdown 或完整格式。导出 PNG/SVG 时会内嵌可读取的图片与数学字体。",
+        "children": [
+          {
+            "id": "save",
+            "text": "保存时检查外部修改，冲突保留副本"
+          }
+        ]
+      }
+    ]
+  }
+}

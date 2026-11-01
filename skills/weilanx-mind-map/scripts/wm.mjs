@@ -342,7 +342,7 @@ function validate(doc) {
     const bad = badStyleKeys(t.style);
     if (bad.length) issues.push({ level: "warn", message: `\u8282\u70B9\u300C${short(t.text)}\u300D\u7684\u6837\u5F0F\u503C\u975E\u6CD5:${bad.join(", ")},\u5DF2\u6309\u4E3B\u9898\u9ED8\u8BA4\u663E\u793A`, id: t.id });
     for (const m of t.markers ?? []) {
-      if (!markerDef(m)) issues.push({ level: "warn", message: `\u8282\u70B9\u300C${short(t.text)}\u300D\u6709\u672A\u77E5\u6807\u8BB0\u300C${m}\u300D`, id: t.id });
+      if (!markerDef(m) && !new RegExp("\\p{Extended_Pictographic}|\\p{Emoji_Presentation}|\\u20e3", "u").test(m)) issues.push({ level: "warn", message: `\u8282\u70B9\u300C${short(t.text)}\u300D\u6709\u672A\u77E5\u6807\u8BB0\u300C${m}\u300D`, id: t.id });
     }
     if (t.structure !== void 0 && !STRUCTURES.includes(t.structure)) {
       issues.push({ level: "warn", message: `\u8282\u70B9\u300C${short(t.text)}\u300D\u7684\u7ED3\u6784\u300C${String(t.structure)}\u300D\u672A\u77E5,\u5DF2\u5FFD\u7565`, id: t.id });
@@ -1174,6 +1174,61 @@ var THEMES = [
     })
   }
 ];
+var GOGOGA_BRANCHES = ["#f76c6c", "#ffa36b", "#8ccba4", "#7fe0d3", "#62cff4", "#d98cf2"];
+var GOGOGA_DARK_BRANCHES = ["#e26262", "#e8955f", "#6fb88c", "#5fc9bb", "#4fb8dd", "#c47ee0"];
+function gogogaPalette(name, dark) {
+  const text = dark ? "#e3e3e8" : "#1f1f1f", bg = dark ? "#1e1e1e" : "#ffffff";
+  let root = lv(ROOT, { fill: dark ? "#5c6bc0" : "#3f51b5", textColor: "#ffffff", padX: 32, padY: 18, fontSize: 26 });
+  let main2 = lv(MAIN, { fill: dark ? "#30303a" : "#e9e9ef", textColor: text, bold: true, padX: 16, padY: 10 });
+  let sub = lv(SUB, { shape: "rounded", fill: dark ? "#2a2a31" : "#f1f1f4", border: "none", borderWidth: 0, textColor: text, padX: 10, padY: 6 });
+  let line = dark ? "#c9c9d1" : "#2b2b2b", edge = "elbow", rainbow = [line];
+  if (name === "rainbow") {
+    rainbow = dark ? GOGOGA_DARK_BRANCHES : GOGOGA_BRANCHES;
+    edge = "curve";
+    root = lv(root, { fill: "none", textColor: text, fontSize: 28, padX: 20, padY: 12 });
+    main2 = lv(main2, { fill: "branch", textColor: dark ? "#f5f5f5" : "#1f1f1f", fontSize: 16, bold: false });
+    sub = lv(sub, { shape: "underline", fill: "none", border: "branch", borderWidth: 1.5 });
+  } else if (name === "business") {
+    line = dark ? "#7d8da3" : "#64748b";
+    rainbow = [line];
+    root = lv(root, { fill: dark ? "#24405f" : "#1e3a5f", fontSize: 24, radius: 4 });
+    main2 = lv(main2, { fill: dark ? "#2c5282" : "#2b6cb0", textColor: "#ffffff", fontSize: 16, bold: false, radius: 4 });
+    sub = lv(sub, { fill: dark ? "#232a35" : "#eef2f7", textColor: dark ? "#e2e8f0" : "#1a202c", fontSize: 13, radius: 3 });
+  } else if (name === "warm") {
+    line = dark ? "#c08d6a" : "#a3714f";
+    rainbow = [line];
+    edge = "curve";
+    root = lv(root, { fill: dark ? "#9a3412" : "#c2410c", textColor: "#fff7ed", padX: 30, padY: 16, radius: 18 });
+    main2 = lv(main2, { fill: dark ? "#57320f" : "#fed7aa", textColor: dark ? "#fed7aa" : "#7c2d12", padX: 18, padY: 9, radius: 14 });
+    sub = lv(sub, { fill: dark ? "#33241a" : "#fff7ed", textColor: dark ? "#fde3c7" : "#431407", padX: 12, radius: 10 });
+  } else if (name === "mono") {
+    line = dark ? "#71717a" : "#a1a1aa";
+    rainbow = [line];
+    root = lv(root, { fill: dark ? "#fafafa" : "#18181b", textColor: dark ? "#18181b" : "#fafafa", fontSize: 22, radius: 2, lineWidth: 1.5 });
+    main2 = lv(main2, { fill: "none", textColor: dark ? "#f4f4f5" : "#18181b", fontSize: 15, radius: 2, lineWidth: 1.25 });
+    sub = lv(sub, { fill: "none", textColor: dark ? "#d4d4d8" : "#27272a", border: dark ? "#3f3f46" : "#d4d4d8", borderWidth: 1, fontSize: 13, radius: 2, lineWidth: 1 });
+  } else if (name === "forest") {
+    line = dark ? "#7aa04a" : "#4d7c0f";
+    edge = "curve";
+    rainbow = dark ? ["#6aa878", "#86ab68", "#5ea48f", "#9aab63", "#6ba299", "#8aa87e"] : ["#a7e0b0", "#bfe5a0", "#93ddc8", "#d9e8a0", "#a3d9d0", "#c7e3b8"];
+    root = lv(root, { fill: dark ? "#1a4d33" : "#14532d", textColor: "#ecfdf5", radius: 12 });
+    main2 = lv(main2, { fill: "branch", textColor: dark ? "#0f2d1a" : "#14532d", radius: 10 });
+    sub = lv(sub, { fill: dark ? "#1f2c22" : "#f0fdf4", textColor: dark ? "#d6f0dc" : "#14532d", radius: 8 });
+  } else if (name === "line") {
+    line = dark ? "#d4d4d8" : "#52525b";
+    rainbow = [line];
+    root = lv(root, { fill: dark ? "#52525b" : "#e4e4e7", textColor: dark ? "#fafafa" : "#18181b", border: dark ? "#d4d4d8" : "#a1a1aa", borderWidth: 1, fontSize: 22, bold: false, padX: 24, padY: 12 });
+    main2 = lv(main2, { fill: "none", fontSize: 15, bold: false, padX: 10, padY: 4 });
+    sub = lv(sub, { fill: "none", fontSize: 14, padX: 9, padY: 4 });
+  }
+  root = { ...root, lineColor: line, lineStyle: name === "snow" ? "curve" : edge };
+  main2 = { ...main2, lineColor: name === "rainbow" || name === "forest" ? "branch" : line, lineStyle: edge };
+  sub = { ...sub, lineColor: name === "rainbow" || name === "forest" ? "branch" : line, lineStyle: edge };
+  return palette({ background: bg, text, rainbow, relationship: line, lineStyle: edge, root, main: main2, sub, floating: main2, summary: lv(SUMMARY, { textColor: text }), keepUnderline: true });
+}
+var GOGOGA_NAMES = { snow: ["\u96EA\u677E", "Snow"], rainbow: ["\u5F69\u8679", "Rainbow"], business: ["\u5546\u52A1", "Business"], warm: ["\u6696\u9633", "Warm"], mono: ["\u6781\u7B80", "Minimal"], line: ["\u7EBF\u6761", "Line"], forest: ["\u68EE\u6797", "Forest"] };
+for (const [name, labels] of Object.entries(GOGOGA_NAMES)) THEMES.push({ id: `gogoga-${name}`, zh: `${labels[0]} \xB7 Gogoga`, en: `${labels[1]} \xB7 Gogoga`, light: gogogaPalette(name, false), dark: gogogaPalette(name, true) });
+var builtinThemeCount = THEMES.length;
 
 // src/cli/wm.ts
 var HELP = `wm \u2014 \u8BFB\u5199 .wmind \u601D\u7EF4\u5BFC\u56FE(\u7EAF JSON)

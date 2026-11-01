@@ -6,3 +6,5 @@ out/
 .claude/
 skills/*-workspace/
 dist/
+artifacts/
+vendor/gogoga/upstream-tests.log

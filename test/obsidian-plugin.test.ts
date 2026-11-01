@@ -1,0 +1,128 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { createRequire } from 'node:module';
+
+async function boot() {
+ const result=await build({entryPoints:['src/obsidian/main.ts'],bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'plugin-host',setup(build){
+  build.onResolve({filter:/^obsidian$/},()=>({path:'obsidian',namespace:'host'}));
+  build.onLoad({filter:/.*/,namespace:'host'},()=>({contents:`
+  class Component { constructor(){this.cleanups=[];} register(fn){this.cleanups.push(fn);} registerEvent(ref){this.register(()=>ref.off());} registerDomEvent(target,name,handler){target.addEventListener?.(name,handler);this.register(()=>target.removeEventListener?.(name,handler));} unload(){for(const fn of this.cleanups.splice(0).reverse())fn();} }
+  class WorkspaceLeaf { async setViewState(state){this.state=state;} }
+  class FileView extends Component {constructor(leaf){super();this.leaf=leaf;this.app=leaf.app;this.file=leaf.file;this.contentEl={};} }
+  class Plugin extends Component {
+   constructor(app,manifest){super();this.app=app;this.manifest=manifest;this.views=new Map();this.extensions=new Map();this.commands=[];this.codeblocks=new Map();this.tabs=[];this.saved=[];}
+   async loadData(){return null;} async saveData(data){this.saved.push(structuredClone(data));}
+   registerView(type,create){this.views.set(type,create);this.register(()=>this.views.delete(type));}
+   registerExtensions(exts,type){for(const ext of exts)this.extensions.set(ext,type);this.register(()=>exts.forEach(ext=>this.extensions.delete(ext)));}
+   addCommand(command){this.commands.push(command);this.register(()=>this.commands.splice(this.commands.indexOf(command),1));}
+   addSettingTab(tab){this.tabs.push(tab);this.register(()=>this.tabs.splice(this.tabs.indexOf(tab),1));}
+   addRibbonIcon(){return {remove(){}};} registerHoverLinkSource(){}
+   registerMarkdownCodeBlockProcessor(language,processor){this.codeblocks.set(language,processor);this.register(()=>this.codeblocks.delete(language));}
+   registerMarkdownPostProcessor(){} registerEditorExtension(){}
+  }
+  const classes={Component,Plugin,WorkspaceLeaf,FileView,TextFileView:FileView,ItemView:FileView,MarkdownView:FileView};
+  for(const name of ['AbstractInputSuggest','FuzzySuggestModal','PluginSettingTab','Modal','SuggestModal','Setting','Menu','MenuItem','MarkdownRenderChild','Scope','TAbstractFile','TFile','TFolder','App','Notice'])classes[name]=class extends Component {constructor(...args){super();this.app=args[0];} register(){}};
+  const functions={getLanguage:()=> 'en',normalizePath:path=>path.replace(/^\\//,''),loadMathJax:async()=>{},loadPrism:async()=>{},moment:{locale:()=> 'en'},addIcon:()=>{},getIcon:()=>null,setIcon:()=>{},setTooltip:()=>{},finishRenderMath:()=>{},renderMath:()=>null};
+  module.exports=new Proxy({__esModule:true,...classes,...functions},{get(target,key){return target[key]??class extends Component {constructor(...args){super();this.app=args[0];}};}});
+  `}));
+  build.onResolve({filter:/^(react|react-dom\/client)$/},args=>({path:args.path,namespace:'react'}));
+  build.onLoad({filter:/.*/,namespace:'react'},()=>({contents:'export function App(){};export function createElement(){};export function createRoot(){return {render(){},unmount(){}}}'}));
+  build.onResolve({filter:/webview\/src\/(App|RichTopic)$/},args=>({path:args.path,namespace:'react'}));
+ }}]});
+ const style={setProperty(){},removeProperty(){}};
+ const classes=new Set<string>();
+ const elements:any[]=[];
+ const doc:any={body:{style,classList:{toggle(name:string,enabled:boolean){if(enabled)classes.add(name);else classes.delete(name);},contains(name:string){return classes.has(name);}}},getElementById(id:string){return elements.find(e=>e.id===id&&e.isConnected)??null;},querySelectorAll(){return [];},addEventListener(){},removeEventListener(){},createElement(){const el:any={ownerDocument:doc,isConnected:false,textContent:'',remove(){el.isConnected=false;}};elements.push(el);return el;},head:{append(el:any){el.isConnected=true;}}};
+ const originalWindow=Object.getOwnPropertyDescriptor(globalThis,'window'),originalDocument=Object.getOwnPropertyDescriptor(globalThis,'document');
+ Object.defineProperty(globalThis,'document',{configurable:true,value:doc});
+ Object.defineProperty(globalThis,'window',{configurable:true,value:{setTimeout,clearTimeout,addEventListener(){},removeEventListener(){}}});
+ const module={exports:{}};
+ try {
+ new Function('require','module','exports',result.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports);
+ const Main=(module.exports as any).default;
+ const refs=new Set<any>();
+ const on=(name:string,fn:Function)=>{const ref={name,fn,off(){refs.delete(ref);}};refs.add(ref);return ref;};
+ const panes=new Map<string,any[]>();
+ const originalMd=()=>{};
+ const embeds:Record<string,unknown>={md:originalMd};
+ const app:any={
+  workspace:{on,offref:(ref:any)=>ref.off(),getLeavesOfType:(type:string)=>panes.get(type)??[],iterateAllLeaves(fn:Function){for(const leaves of panes.values())for(const leaf of leaves)fn(leaf);},onLayoutReady(){},getActiveFile(){return null;},getActiveViewOfType(){return null;},getMostRecentLeaf(){return null;}},
+  metadataCache:{on,getCache(){return null;},resolvedLinks:{}},
+  vault:{on,adapter:{async exists(){return false;},async read(){throw new Error('missing');},async write(){}}},
+  embedRegistry:{embedByExtension:embeds,registerExtension(ext:string,create:unknown){embeds[ext]=create;},unregisterExtension(ext:string){delete embeds[ext];}},
+  plugins:{plugins:{}},loadLocalStorage(){return null;},saveLocalStorage(){},
+ };
+ const plugin=new Main(app,{id:'personal-mindmap',dir:'.obsidian/plugins/personal-mindmap'});
+ await plugin.onload();
+ return {plugin,app,panes,refs,embeds,originalMd,styleElements:elements,classes,cleanup(){plugin.unload();if(originalWindow)Object.defineProperty(globalThis,'window',originalWindow);else Reflect.deleteProperty(globalThis,'window');if(originalDocument)Object.defineProperty(globalThis,'document',originalDocument);else Reflect.deleteProperty(globalThis,'document');}};
+ } catch(error) {if(originalWindow)Object.defineProperty(globalThis,'window',originalWindow);else Reflect.deleteProperty(globalThis,'window');if(originalDocument)Object.defineProperty(globalThis,'document',originalDocument);else Reflect.deleteProperty(globalThis,'document');throw error;}
+}
+
+test('full plugin registers distinct views, commands, processors and embeds and cleans up on unload',async()=>{
+ const f=await boot();
+ try {
+  assert.ok(f.plugin.views.has('personal-mindmap-wmind'));
+  assert.ok(f.plugin.views.has('personal-mindmap-markdown'));
+  assert.ok(f.plugin.views.has('personal-mindmap-xmind'));
+  assert.equal(f.plugin.extensions.get('wmind'),'personal-mindmap-wmind');
+  assert.equal(f.plugin.extensions.get('xmind'),'personal-mindmap-xmind');
+  const ids=f.plugin.commands.map((command:any)=>command.id);
+  assert.ok(ids.length>40);
+  assert.equal(new Set(ids).size,ids.length);
+  assert.ok(f.plugin.codeblocks.has('mindmap'));assert.ok(f.plugin.codeblocks.has('gogoga-mindmap'));
+  assert.equal(f.plugin.tabs.length,1);
+  assert.equal(typeof f.embeds.wmind,'function');assert.equal(typeof f.embeds.xmind,'function');assert.notEqual(f.embeds.md,f.originalMd);
+ } finally {f.cleanup();}
+ assert.equal(f.refs.size,0);
+ assert.equal(f.plugin.views.size,0);assert.equal(f.plugin.commands.length,0);
+ assert.equal(f.embeds.md,f.originalMd);assert.equal(f.embeds.wmind,undefined);assert.equal(f.embeds.xmind,undefined);
+ assert.ok(f.styleElements.every((el:any)=>!el.isConnected));
+});
+
+test('settings refresh uses the safe primary-pane lifecycle without resetting dirty source',async()=>{
+ const f=await boot();
+ try {
+  const factory=f.plugin.views.get('personal-mindmap-wmind');
+  const view=factory({app:f.app,file:{path:'map.wmind'}});
+  view.containerEl={ownerDocument:document,doc:document};
+  let safe=0,resets=0;
+  view.refreshFromSettings=async()=>{safe++;};
+  view.setViewData=()=>{resets++;};
+  f.panes.set('personal-mindmap-wmind',[{view}]);
+  f.plugin.applyCustomThemes();
+  await f.plugin.saveSettings();
+  assert.ok(safe>0);
+  assert.equal(resets,0);
+ } finally {f.cleanup();}
+});
+
+
+
+
+test('saving settings during dirty-source conflict preserves disk and local recovery',async()=>{
+ const f=await boot();
+ try {
+  const original=JSON.stringify({version:1,root:{id:'root',text:'original'}});
+  const local=JSON.stringify({version:1,root:{id:'root',text:'local'}});
+  const external=JSON.stringify({version:1,root:{id:'root',text:'external'}});
+  let disk=original;const copies:string[]=[];
+  f.app.vault.process=async(_file:unknown,transform:(value:string)=>string)=>{disk=transform(disk);};
+  f.app.vault.create=async(path:string,text:string)=>{copies.push(text);return {path};};
+  f.app.fileManager={async getAvailablePathForAttachment(name:string){return name;}};
+  const view=f.plugin.views.get('personal-mindmap-wmind')({app:f.app,file:{path:'map.wmind',basename:'map',extension:'wmind'}});
+  view.containerEl={ownerDocument:document,doc:document};view.mount=()=>{view.root={unmount(){}};};view.requestSave=()=>{};
+  view.setViewData(original,true);
+  f.panes.set('personal-mindmap-wmind',[{view}]);
+  f.plugin.settings.saveImmediately=false;
+  await view.onMessage({type:'edit',text:local});
+  disk=external;
+  await f.plugin.saveSettings();
+  assert.equal(disk,external);
+  assert.equal(view.getViewData(),local);
+  assert.equal(view.conflict,true);
+  assert.deepEqual(copies,[local]);
+  await f.plugin.saveSettings();
+  assert.equal(view.conflict,true);assert.deepEqual(copies,[local]);
+ } finally {f.cleanup();}
+});

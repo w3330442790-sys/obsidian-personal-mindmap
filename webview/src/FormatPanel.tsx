@@ -391,6 +391,10 @@ function TopicStyle({ a, scene, ids, focus }: { a: Actions; scene: Scene; ids: s
       <button className="wm-btn wm-btn-block" onClick={() => a.apply((d) => ops.clearStyle(d, ids))}>
         {t("resetStyle")}
       </button>
+      <Section title="表情与复习标记">
+        {a.emojiGroups.map(g=><div key={g.name}><div>{g.name}{g.exclusive?" · 互斥":""}</div><div className="wm-markers">{g.emojis.map(emoji=><button key={emoji} className="wm-marker" title={emoji} onClick={()=>a.toggleEmoji(emoji)}>{emoji}</button>)}</div></div>)}
+      </Section>
+      <Section title="标注"><button className="wm-btn" disabled={!one} onClick={()=>a.feature("callout")}>编辑标注</button><button className="wm-btn" disabled={!one} onClick={()=>a.feature("calloutColor")}>标注颜色</button></Section>
       <Section title={t("marker")}>
         {MARKER_CATEGORIES.map((c) => (
           <div key={c.id} className="wm-marker-row">
@@ -513,6 +517,7 @@ function RangeStyle({ a, id, summary }: { a: Actions; id: string; summary?: bool
       <Section title={t("fill")}>
         <Colors value={own.fill as string | undefined} onChange={(v) => set({ fill: v })} allowNone />
       </Section>
+      {summary && <Section title="概括宽度"><input type="number" min={60} max={1200} value={typeof f.range.width==="number"?f.range.width:""} placeholder="自动" onChange={e=>{const width=Number(e.target.value);if(!e.target.value||width>=60&&width<=1200)a.apply(d=>ops.updateRange(d,id,{width:e.target.value?width:undefined}));}} /></Section>}
       {summary && (
         <Section title={t("text")}>
           <Colors value={own.textColor as string | undefined} onChange={(v) => set({ textColor: v })} />

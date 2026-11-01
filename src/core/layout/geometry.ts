@@ -8,8 +8,13 @@ const f = (n: number) => Math.round(n * 10) / 10;
  * 父 → 子连线。inset:曲线起点往父节点内部缩进的距离(被父节点色块或下划线盖住),
  * 让线从父节点边缘斜着散出,而不是从一个点水平挤出。
  */
-export function edgePath(e: Edge, style: LineStyle, inset = 0): string {
+export function edgePath(e: Edge, style: LineStyle, inset = 0, sharp = false): string {
   const { x1, y1, x2, y2 } = e;
+  if(sharp&&style==="elbow"){
+    if(e.orient==="tree")return `M${f(x1)},${f(y1)} L${f(x1)},${f(y2)} L${f(x2)},${f(y2)}`;
+    const mid=e.orient==="v"?(y1+y2)/2:e.fromRoot?x1+(x2-x1)*.45:(x1+x2)/2;
+    return e.orient==="v"?`M${f(x1)},${f(y1)} L${f(x1)},${f(mid)} L${f(x2)},${f(mid)} L${f(x2)},${f(y2)}`:`M${f(x1)},${f(y1)} L${f(mid)},${f(y1)} L${f(mid)},${f(y2)} L${f(x2)},${f(y2)}`;
+  }
   if (style === "straight") return `M${f(x1)},${f(y1)} L${f(x2)},${f(y2)}`;
   if (e.orient === "tree") {
     const r = Math.min(8, Math.abs(y2 - y1), Math.abs(x2 - x1));

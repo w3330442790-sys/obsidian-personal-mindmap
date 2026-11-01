@@ -321,7 +321,7 @@ export function validate(doc: MindDoc): Issue[] {
     const bad = badStyleKeys(t.style);
     if (bad.length) issues.push({ level: "warn", message: `节点「${short(t.text)}」的样式值非法:${bad.join(", ")},已按主题默认显示`, id: t.id });
     for (const m of t.markers ?? []) {
-      if (!markerDef(m)) issues.push({ level: "warn", message: `节点「${short(t.text)}」有未知标记「${m}」`, id: t.id });
+      if (!markerDef(m) && !/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\u20e3/u.test(m)) issues.push({ level: "warn", message: `节点「${short(t.text)}」有未知标记「${m}」`, id: t.id });
     }
     if (t.structure !== undefined && !STRUCTURES.includes(t.structure)) {
       issues.push({ level: "warn", message: `节点「${short(t.text)}」的结构「${String(t.structure)}」未知,已忽略`, id: t.id });

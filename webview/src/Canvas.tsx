@@ -5,6 +5,7 @@ import type { NodeBox, Rect } from "../../src/core/layout";
 import { countDescendants, indexDoc, isInSubtree } from "../../src/core/query";
 import { cleanStyle } from "../../src/core/doc";
 import { SELECTION_COLOR, withAlpha } from "../../src/core/theme";
+import type { EditorSettings } from "./host";
 import type { Scene } from "./scene";
 import { TopicNode } from "./TopicNode";
 import { Rough } from "./rough";
@@ -16,16 +17,22 @@ export interface Viewport {
 }
 
 export type DropTarget =
-  | { type: "child"; parentId: string }
-  | { type: "sibling"; parentId: string; index: number; line: [Point, Point] }
+  | { type: "child"; parentId: string;side?:'left'|'right' }
+  | { type: "sibling"; parentId: string; index: number; line: [Point, Point];side?:'left'|'right' }
   | { type: "float"; pos: Point };
 
 export interface CanvasApi {
+  resizeNote(id:string,w:number,h:number):void;
+  collapseNote(id:string):void;
+  resizeRange(id:string,which:'from'|'to',anchor:string):void;
+  setWidth(id:string,width:number):void;
   select(ids: string[], mode?: "replace" | "toggle" | "add"): void;
   startEdit(id: string): void;
   toggleFold(id: string): void;
   openLink(id: string): void;
-  openNote(id: string): void;
+  openTarget(target:string):void;
+  toggleTask(id:string):void;
+  openNote(id: string,edit?:boolean): void;
   drop(ids: string[], target: DropTarget): void;
   addFloating(pos: Point): void;
   createRelationship(from: string, to: string): void;
@@ -55,15 +62,20 @@ interface Props {
   currentMatch: string | null;
   /** 手绘字体首次加载中:先不显示图形,避免按回退字体排版后再跳动 */
   pending?: boolean;
+  onStudyReveal?: (id:string)=>void;
+  settings?:EditorSettings;
 }
 
 type Drag =
+  | {mode:'note';id:string;sx:number;sy:number;w:number;h:number;nextW:number;nextH:number}
+  | {mode:'range';id:string;which:'from'|'to';anchor:string|null}
+  | {mode:"resize";id:string;sx:number;width:number;current:number}
   | { mode: "pan"; sx: number; sy: number; vx: number; vy: number; moved: boolean }
   | { mode: "marquee"; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { mode: "node"; ids: string[]; sx: number; sy: number; dx: number; dy: number; moved: boolean; drop: DropTarget | null; grab: Point; clickId: string; plain: boolean }
   | { mode: "handle"; relId: string; which: 0 | 1; controls: [Point, Point] };
 
-export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport, setViewport, onSize, spaceHeld, api, showBranches, showRelationships, matches, currentMatch, pending }: Props) {
+export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport, setViewport, onSize, spaceHeld, api, showBranches, showRelationships, matches, currentMatch, pending, onStudyReveal, settings }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -92,9 +104,11 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
   useEffect(() => {
     const el = wrapRef.current!;
     const onWheel = (e: WheelEvent) => {
+      const note=(e.target as Element).closest('[data-kind="note-card"] .wm-rich-topic') as HTMLElement|null;
+      if(note&&!e.ctrlKey&&!e.metaKey&&((e.deltaY>0&&note.scrollTop+note.clientHeight<note.scrollHeight-1)||(e.deltaY<0&&note.scrollTop>0)))return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      if (e.ctrlKey || e.metaKey) {
+      if (e.ctrlKey || e.metaKey || (settings?.wheelAction==="zoom"&&!e.shiftKey)) {
         const factor = Math.exp(-e.deltaY * (e.ctrlKey && !e.metaKey ? 0.01 : 0.002));
         setViewport((v) => zoomAt(v, factor, e.clientX - rect.left, e.clientY - rect.top));
       } else {
@@ -105,9 +119,11 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [setViewport]);
+  }, [setViewport,settings?.wheelAction]);
 
   // 触屏双指缩放:记录所有按下的触点,两指时取消当前拖动,按两指距离变化缩放
+  const apiRef = useRef(api);apiRef.current=api;
+  const longPress = useRef<{timer:number;x:number;y:number}|null>(null);
   const touches = useRef(new Map<number, Point>());
   const pinch = useRef<{ d0: number; v0: Viewport; mid: Point } | null>(null);
   useEffect(() => {
@@ -115,6 +131,12 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
     const down = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
       touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if(longPress.current){window.clearTimeout(longPress.current.timer);longPress.current=null;}
+      if(touches.current.size===1){
+        const target=(e.target as Element).closest('[data-kind="topic"]') as HTMLElement|null;
+        const id=target?.dataset.id;
+        if(id){const x=e.clientX,y=e.clientY;longPress.current={x,y,timer:window.setTimeout(()=>{setD(null);apiRef.current.select([id]);apiRef.current.contextMenu(id,x,y);longPress.current=null;},550)};}
+      }
       if (touches.current.size === 2) {
         const [a, b] = [...touches.current.values()];
         const rect = el.getBoundingClientRect();
@@ -124,6 +146,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
     };
     const move = (e: PointerEvent) => {
       if (!touches.current.has(e.pointerId)) return;
+      if(longPress.current&&Math.hypot(e.clientX-longPress.current.x,e.clientY-longPress.current.y)>8){window.clearTimeout(longPress.current.timer);longPress.current=null;}
       touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const p = pinch.current;
       if (!p || touches.current.size < 2) return;
@@ -134,6 +157,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
       setViewport({ ...z, x: z.x + mid.x - p.mid.x, y: z.y + mid.y - p.mid.y });
     };
     const up = (e: PointerEvent) => {
+      if(longPress.current){window.clearTimeout(longPress.current.timer);longPress.current=null;}
       touches.current.delete(e.pointerId);
       if (touches.current.size < 2) pinch.current = null;
     };
@@ -142,6 +166,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
     return () => {
+      if(longPress.current)window.clearTimeout(longPress.current.timer);
       el.removeEventListener("pointerdown", down, true);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -170,7 +195,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
       if (box.kind !== "topic") continue;
       if (ids.some((id) => isInSubtree(d, id, box.id))) continue;
       const dist = rectDistance(box, p);
-      if (dist === 0) return { type: "child", parentId: box.id };
+      if (dist === 0) return { type: "child", parentId: box.id,...(box.id===d.root.id?{side:p.x<box.x+box.w/2?'left' as const:'right' as const}:{}) };
       if (!best || dist < best.dist) best = { box, dist };
     }
     if (best && best.dist < 48) {
@@ -189,9 +214,9 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
             { x: b.x, y: after ? b.y + b.h + 5 : b.y - 5 },
             { x: b.x + b.w, y: after ? b.y + b.h + 5 : b.y - 5 },
           ];
-      return { type: "sibling", parentId: e.parent.id, index: e.index + (after ? 1 : 0), line };
+      return { type: "sibling", parentId: e.parent.id, index: e.index + (after ? 1 : 0), line,...(e.parent.id===d.root.id?{side:b.dir===-1?'left' as const:'right' as const}:{}) };
     }
-    if (ids.length === 1 && ids[0] !== d.root.id) return { type: "float", pos: { x: p.x - grab.x, y: p.y - grab.y } };
+    if (settings?.dragToFloat !== false && ids.length === 1 && ids[0] !== d.root.id) return { type: "float", pos: { x: p.x - grab.x, y: p.y - grab.y } };
     return null;
   };
 
@@ -206,6 +231,17 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
         if (Math.abs(dx) + Math.abs(dy) > 2) d.moved = true;
         if (spaceHeld.current.down) spaceHeld.current.used = true;
         setViewport((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy }));
+      } else if(d.mode==='note'){
+        setD({...d,nextW:Math.max(120,Math.min(900,d.w+(e.clientX-d.sx)/vpRef.current.k)),nextH:Math.max(80,Math.min(900,d.h+(e.clientY-d.sy)/vpRef.current.k))});
+      } else if(d.mode === 'range') {
+        const range=sceneRef.current.ranges.get(d.id);
+        if(!range)return;
+        const point=toWorld(e.clientX,e.clientY);
+        const boxes=(range.owner.children??[]).map(child=>sceneRef.current.layout.nodes.get(child.id)).filter((box):box is NodeBox=>!!box);
+        boxes.sort((a,b)=>rectDistance(a,point)-rectDistance(b,point));
+        setD({...d,anchor:boxes[0]?.id??null});
+      } else if(d.mode === "resize") {
+        setD({...d,current:Math.max(60,Math.min(1200,d.width+(e.clientX-d.sx)/vpRef.current.k))});
       } else if (d.mode === "marquee") {
         const p = toWorld(e.clientX, e.clientY);
         const nd = { ...d, x1: p.x, y1: p.y };
@@ -236,7 +272,10 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
       const d = dragRef.current;
       setD(null);
       if (!d) return;
-      if (d.mode === "pan" && !d.moved && !spaceHeld.current.down) {
+      if(d.mode==='note'){api.resizeNote(d.id,d.nextW,d.nextH);}
+      else if(d.mode==='range'){if(!readOnly&&d.anchor)api.resizeRange(d.id,d.which,d.anchor);}
+      else if(d.mode==="resize"){if(!readOnly)api.setWidth(d.id,d.current);}
+      else if (d.mode === "pan" && !d.moved && !spaceHeld.current.down) {
         api.select([]);
         api.cancelLinking();
       } else if (d.mode === "node") {
@@ -257,14 +296,16 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
   }, [drag === null]);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 && e.button !== 1) return;
+    if (e.button !== 0 && e.button !== 1 && !(e.button===2&&settings?.leftDrag==="select")) return;
     if (pinch.current) return;
+    const link=(e.target as Element).closest("[data-link]") as HTMLElement|null;
+    if(link?.dataset.link){e.preventDefault();api.openTarget(link.dataset.link);return;}
     const target = (e.target as Element).closest("[data-kind]") as HTMLElement | null;
     const kind = target?.dataset.kind;
     const id = target?.dataset.id ?? target?.closest("[data-id]")?.getAttribute("data-id") ?? "";
     const v = vpRef.current;
-    if (e.button === 1 || spaceHeld.current.down || !kind) {
-      if (e.shiftKey && e.button === 0 && !spaceHeld.current.down) {
+    if (e.button === 1 || e.button===2 || spaceHeld.current.down || !kind) {
+      if ((e.shiftKey || settings?.leftDrag==="select") && e.button === 0 && !spaceHeld.current.down && e.pointerType!=="touch") {
         const p = toWorld(e.clientX, e.clientY);
         setD({ mode: "marquee", x0: p.x, y0: p.y, x1: p.x, y1: p.y, base: selection });
       } else {
@@ -274,6 +315,25 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
     }
     e.preventDefault();
     switch (kind) {
+      case 'note-collapse':api.collapseNote(id);return;
+      case 'note-resize':{
+        const b=L.nodes.get(id),m=scene.metrics.get(id),extra=m?.extras.find(x=>x.kind==='note');if(!b||!extra)return;
+        const w=b.w,h=extra.h-12;setD({mode:'note',id,sx:e.clientX,sy:e.clientY,w,h,nextW:w,nextH:h});return;
+      }
+      case 'range-handle': {
+        if(readOnly)return;
+        const which=target?.getAttribute('data-which')==='from'?'from':'to';
+        setD({mode:'range',id,which,anchor:null});return;
+      }
+      case "resize": {
+        if(readOnly)return;
+        const box=L.nodes.get(id),topic=scene.topics.get(id)??scene.ranges.get(id)?.range;if(!box||!topic)return;
+        const width=typeof topic.width==="number"?topic.width:Math.max(60,box.w-24);
+        setD({mode:"resize",id,sx:e.clientX,width,current:width});return;
+      }
+      case "task-toggle":
+        if(!readOnly)api.toggleTask(id);
+        return;
       case "fold":
         api.toggleFold(id);
         return;
@@ -284,6 +344,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
         api.openNote(id);
         return;
       case "handle": {
+        if(readOnly)return;
         const relId = target!.dataset.rel!;
         const which = Number(target!.dataset.which) as 0 | 1;
         const rel = doc.relationships?.find((r) => r.id === relId);
@@ -304,6 +365,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
         api.focusCapture();
         return;
       case "topic": {
+        onStudyReveal?.(id);
         if (linkingFrom) {
           if (id !== linkingFrom) api.createRelationship(linkingFrom, id);
           api.cancelLinking();
@@ -342,11 +404,13 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
     if (readOnly) return;
     const target = (e.target as Element).closest("[data-kind]") as HTMLElement | null;
     const kind = target?.dataset.kind;
-    const id = target?.dataset.id ?? "";
+    const id = target?.dataset.id ?? target?.closest('[data-id]')?.getAttribute('data-id') ?? "";
     if (!kind) {
       api.addFloating(toWorld(e.clientX, e.clientY));
       return;
     }
+    if(kind==='note-card'){api.openNote(id,true);return;}
+    if(kind==='note-resize'){api.resizeNote(id,320,240);return;}
     if (kind === "topic" || kind === "summary" || kind === "rel" || kind === "boundary") api.startEdit(id);
   };
 
@@ -385,9 +449,9 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
       const pb = L.nodes.get(e.from);
       const inset = e.orient === "h" && !e.fromRoot && ps.shape === "underline" && pb ? Math.min(24, pb.w * 0.3) : 0;
       const width = e.fromRoot && ps.lineStyle === "curve" ? Math.max(2.5, ps.lineWidth) : ps.lineWidth;
-      return <Rough key={e.to} id={"e-" + e.to} geo={{ t: "path", d: edgePath(e, style, inset), size: Math.hypot(e.x2 - e.x1, e.y2 - e.y1) }} style={{ stroke: color, strokeWidth: width }} opacity={dim ? 0.3 : 1} />;
+      return <Rough key={e.to} id={"e-" + e.to} geo={{ t: "path", d: edgePath(e, style, inset,ps.lineSharp), size: Math.hypot(e.x2 - e.x1, e.y2 - e.y1) }} style={{ stroke: color, strokeWidth: width, dashed:ps.lineDashed }} opacity={dim ? 0.3 : 1} />;
     }
-    if (e.fromRoot && ps.lineStyle === "curve") {
+    if (e.fromRoot && ps.lineStyle === "curve" && !ps.lineDashed) {
       return <path key={e.to} d={taperPath(e, ps.lineWidth * 2.2, Math.max(1.5, ps.lineWidth * 0.6))} fill={color} opacity={dim ? 0.3 : 1} />;
     }
     // 组织结构图里曲线会在父节点处挤成一束,改用圆角折线
@@ -396,7 +460,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
     const pb = L.nodes.get(e.from);
     const hides = ps.fill !== "none" || ps.shape === "underline";
     const inset = e.orient === "h" && hides && pb ? Math.min(24, pb.w * 0.3) : 0;
-    return <path key={e.to} d={edgePath(e, style, inset)} fill="none" stroke={color} strokeWidth={ps.lineWidth} strokeLinecap="round" opacity={dim ? 0.3 : 1} />;
+    return <path key={e.to} d={edgePath(e, style, inset,ps.lineSharp)} fill="none" stroke={color} strokeWidth={ps.lineWidth} strokeLinecap="round" strokeDasharray={ps.lineDashed?"6 4":undefined} opacity={dim ? 0.3 : 1} />;
   });
 
   const boundaries = L.boundaries.map((g) => {
@@ -563,6 +627,8 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
           <g>{summaries}</g>
           <g>{nodes.map((b) => (dragging.has(b.id) ? <g key={b.id} opacity={0.35}>{renderNode(b)}</g> : renderNode(b)))}</g>
           {showRelationships && <g>{rels}</g>}
+          {!readOnly && selection.length===1 && (()=>{const id=selection[0],b=L.nodes.get(id);if(!b||(!scene.topics.has(id)&&!scene.ranges.has(id)))return null;const delta=drag?.mode==="resize"&&drag.id===id?drag.current-drag.width:0;return <g className="wm-ui"><rect data-kind="resize" data-id={id} x={b.x+b.w-4+delta} y={b.y+b.h/2-9} width={8} height={18} rx={3} fill={SELECTION_COLOR} style={{cursor:"ew-resize"}}/><title>拖动调整内容宽度</title></g>;})()}
+          {!readOnly&&selection.length===1&&(()=>{const id=selection[0],entry=scene.ranges.get(id);if(!entry)return null;return <g className="wm-ui">{(['from','to'] as const).map(which=>{const b=L.nodes.get(entry.range[which]);if(!b)return null;return <circle key={which} data-kind="range-handle" data-id={id} data-which={which} cx={b.x+b.w+8} cy={which==='from'?b.y:b.y+b.h} r={6} fill="#fff" stroke={SELECTION_COLOR} strokeWidth={2} style={{cursor:'move'}}><title>拖动调整范围</title></circle>;})}</g>;})()}
           {nodeDrag && <g className="wm-ui">{nodes.filter((b) => dragging.has(b.id)).map((b) => renderNode(b, true))}</g>}
           {nodeDrag?.drop?.type === "sibling" && (
             <line

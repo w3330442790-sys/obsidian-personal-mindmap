@@ -995,3 +995,9 @@ textarea.wm-input {
   line-height: 1.5;
   color: var(--wm-muted);
 }
+
+/* Inline content lives inside SVG; local inline styles also survive SVG serialization. */
+.wm-root .wm-rich-topic { user-select:none; }
+.wm-root .wm-rich-topic p { margin:0; }
+.wm-root .wm-rich-topic a { cursor:pointer; }
+.wm-root [data-kind="reveal"] { cursor:pointer; }

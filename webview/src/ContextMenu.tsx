@@ -42,7 +42,7 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
   }, [onClose]);
 
   return (
-    <div className="wm-ctx" ref={ref} style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
+    <div className="wm-ctx" ref={ref} style={{ left: pos.x, top: pos.y, maxHeight:"calc(100vh - 8px)", overflowY:"auto" }} onContextMenu={(e) => e.preventDefault()}>
       {items.map((it) => (
         <button
           key={it.label}

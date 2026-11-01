@@ -1,12 +1,13 @@
-import { memo } from "react";
+import { memo, useContext } from "react";
 import type { NodeBox } from "../../src/core/layout";
 import { markerDef } from "../../src/core/markers";
 import { SELECTION_COLOR, withAlpha, type ResolvedStyle } from "../../src/core/theme";
 import type { Shape } from "../../src/core/types";
+import { RichEnvironment, RichTopic } from "./RichTopic";
 import { Rough } from "./rough";
 import { ICON_SIZE, LABEL_FONT_SIZE, LABEL_HEIGHT, type Content, type Metrics } from "./measure";
 
-export function shapePath(shape: Shape, w: number, h: number, root = false): string {
+export function shapePath(shape: Shape, w: number, h: number, root = false, radius?: number): string {
   switch (shape) {
     case "rect":
       return `M0,0 H${w} V${h} H0 Z`;
@@ -18,7 +19,7 @@ export function shapePath(shape: Shape, w: number, h: number, root = false): str
       return `M0,${h / 2} A${w / 2},${h / 2} 0 1 1 ${w},${h / 2} A${w / 2},${h / 2} 0 1 1 0,${h / 2} Z`;
     case "rounded":
     default: {
-      const r = Math.min(root ? 10 : 7, h / 3);
+      const r = Math.max(0,Math.min(radius ?? (root ? 10 : 7),h/2,w/2));
       return `M${r},0 H${w - r} Q${w},0 ${w},${r} V${h - r} Q${w},${h} ${w - r},${h} H${r} Q0,${h} 0,${h - r} V${r} Q0,0 ${r},0 Z`;
     }
   }
@@ -29,6 +30,7 @@ function Marker({ id, x, y, size }: { id: string; x: number; y: number; size: nu
   const r = size / 2;
   const cx = x + r;
   const cy = y + r;
+  if (!def && /\p{Extended_Pictographic}/u.test(id)) return <text x={cx} y={cy} dy=".36em" textAnchor="middle" fontSize={size*.95} fontFamily="sans-serif">{id}</text>;
   if (!def) {
     return (
       <g>
@@ -129,6 +131,8 @@ function foldPos(box: NodeBox): { x: number; y: number } {
 
 export const TopicNode = memo(function TopicNode({ box, style: s, m, content, selected, dropTarget, fold, ghost, background }: Props) {
   const { w, h } = box;
+  const richEnv = useContext(RichEnvironment);
+  const covered = !!richEnv.studyMode && !richEnv.revealed?.has(box.id) && (content.text.includes("🙈") || content.markers?.includes("🙈") || content.markers?.includes("answer"));
   const fill = s.fill === "none" ? "transparent" : s.fill;
   const hasBorder = s.border !== "none" && s.borderWidth > 0;
   const iconColor = withAlpha(s.textColor.startsWith("#") ? s.textColor : "#888888", 0.75) as string;
@@ -140,6 +144,7 @@ export const TopicNode = memo(function TopicNode({ box, style: s, m, content, se
       transform={`translate(${box.x},${box.y})`}
       data-kind={box.kind === "summary" ? "summary" : "topic"}
       data-id={box.id}
+      opacity={content.viewHidden ? .45 : richEnv.studyMode && content.studyOption && content.studyShown && !content.studyCorrect ? .5 : undefined}
     >
       {s.hand ? (
         <>
@@ -147,15 +152,16 @@ export const TopicNode = memo(function TopicNode({ box, style: s, m, content, se
           {s.shape === "underline" || s.shape === "none" ? (
             <rect x={0} y={0} width={w} height={h} fill="transparent" />
           ) : (
-            <path d={shapePath(s.shape, w, h, s.kind === "root")} fill={background} />
+            <path d={shapePath(s.shape, w, h, s.kind === "root",s.radius)} fill={background} />
           )}
           <Rough
             id={box.id}
-            geo={{ t: "shape", shape: s.shape, w, h }}
+            geo={s.shape === "rounded" && s.radius !== undefined ? {t:"path", d:shapePath(s.shape,w,h,s.kind === "root",s.radius),size:Math.max(w,h)} : { t: "shape", shape: s.shape, w, h }}
             style={{
               stroke: hasBorder ? s.border : "none",
               strokeWidth: hasBorder ? s.borderWidth : 2,
               fill: s.shape === "underline" ? undefined : s.fill,
+              dashed:s.borderDashed,
               fillStyle: s.fillStyle === "none" ? undefined : s.fillStyle,
             }}
           />
@@ -163,17 +169,18 @@ export const TopicNode = memo(function TopicNode({ box, style: s, m, content, se
       ) : s.shape === "underline" ? (
         <>
           <rect x={0} y={0} width={w} height={h} fill={fill} />
-          {hasBorder && <line x1={0} y1={h} x2={w} y2={h} stroke={s.border} strokeWidth={s.borderWidth} strokeLinecap="round" />}
+          {hasBorder && <line x1={0} y1={h} x2={w} y2={h} stroke={s.border} strokeWidth={s.borderWidth} strokeLinecap="round" strokeDasharray={s.borderDashed ? "6 4" : undefined} />}
         </>
       ) : s.shape === "none" ? (
         <rect x={0} y={0} width={w} height={h} fill={fill} />
       ) : (
-        <path d={shapePath(s.shape, w, h, s.kind === "root")} fill={fill} stroke={hasBorder ? s.border : "none"} strokeWidth={hasBorder ? s.borderWidth : 0} />
+        <path d={shapePath(s.shape, w, h, s.kind === "root",s.radius)} fill={fill} stroke={hasBorder ? s.border : "none"} strokeWidth={hasBorder ? s.borderWidth : 0} strokeDasharray={s.borderDashed ? "6 4" : undefined} />
       )}
+      <g visibility={covered ? "hidden" : undefined}>
       {(content.markers ?? []).map((id, i) => (
         <Marker key={id + i} id={id} x={m.markersX + i * (m.markerSize + 3)} y={m.markersY} size={m.markerSize} />
       ))}
-      <text
+      {m.rich ? <RichTopic topicId={box.id} text={content.text} x={m.textX} y={m.textY} w={m.textW} h={m.textH} font={m.font} lineHeight={m.lineHeight} align={s.textAlign} color={s.textColor} strike={s.strike} /> : <text
         fontFamily={s.fontFamily}
         fontSize={s.fontSize}
         fontWeight={s.bold ? 600 : 400}
@@ -193,7 +200,16 @@ export const TopicNode = memo(function TopicNode({ box, style: s, m, content, se
             {line || " "}
           </tspan>
         ))}
-      </text>
+      </text>}
+      {m.extras?.map((extra,i)=><g key={i} data-kind={extra.kind === "note" ? "note-card" : "callout"}>
+        <rect x={s.padX} y={m.extraY+extra.y} width={Math.max(12,w-s.padX*2)} height={extra.h} rx={5} fill={extra.kind === "callout" && content.calloutColor ? content.calloutColor : s.branchColor} fillOpacity={extra.kind === "callout" && content.calloutColor ? .12 : .09} stroke={extra.kind === "callout" && content.calloutColor ? content.calloutColor : s.branchColor} strokeOpacity={.25} />
+        <RichTopic markdown={extra.kind === "note"} topicId={box.id} text={extra.text} x={s.padX+6} y={m.extraY+extra.y+6} w={Math.max(1,w-s.padX*2-12)} h={extra.h-12} font={m.font} lineHeight={m.lineHeight} align="left" color={s.textColor} />
+        {extra.kind==='note'&&<g className="wm-ui"><rect data-kind="note-collapse" x={w-25} y={s.padY+extra.y+2} width={16} height={14} rx={3} fill={background} stroke={iconColor}/><path d={`M${w-21},${s.padY+extra.y+9}h8`} stroke={iconColor} pointerEvents="none"/><rect data-kind="note-resize" x={w-15} y={s.padY+extra.y+extra.h-12} width={12} height={12} fill={iconColor} opacity={.6} style={{cursor:'nwse-resize'}}/></g>}
+      </g>)}
+      {content.studyQuestion && richEnv.studyMode && !richEnv.revealed?.has(box.id) && <g data-kind="reveal" role="button" aria-label="点击揭晓选项" tabIndex={0} onClick={ev=>{ev.stopPropagation();richEnv.reveal?.(box.id);}} onKeyDown={ev=>{if(ev.key === "Enter" || ev.key === " "){ev.preventDefault();richEnv.reveal?.(box.id);}}}>
+        <title>{content.studyMultiple ? "多选题 · 点击揭晓答案" : "单选题 · 点击揭晓答案"}</title><circle cx={w-2} cy={2} r={9} fill={background} stroke={s.branchColor}/><text x={w-2} y={2} dy=".35em" textAnchor="middle" fontSize={11} fill={s.textColor}>?</text>
+      </g>}
+      {!richEnv.studyMode && /^\s*\[[xX ]\]\s/.test(content.text) && <rect data-kind="task-toggle" data-id={box.id} x={m.textX} y={m.textY} width={Math.min(26,m.textW)} height={m.lineHeight} fill="transparent"><title>切换任务完成状态</title></rect>}
       {content.note && <NoteIcon x={m.iconsX} y={m.iconsY} color={iconColor} />}
       {content.link && <LinkIcon x={linkX} y={m.iconsY} color={iconColor} />}
       {(content.labels ?? []).map((l, i) => {
@@ -207,6 +223,12 @@ export const TopicNode = memo(function TopicNode({ box, style: s, m, content, se
           </g>
         );
       })}
+      </g>
+      {richEnv.studyMode && content.studyOption && content.studyShown && content.studyCorrect && <rect x={-2} y={-2} width={w+4} height={h+4} rx={7} fill="none" stroke="#2eaf68" strokeWidth={2}/>}
+      {covered && <g data-kind="reveal" onClick={ev=>{ev.stopPropagation();richEnv.reveal?.(box.id);}} role="button" aria-label="Reveal answer" tabIndex={0} onKeyDown={ev=>{if(ev.key === "Enter" || ev.key === " "){ev.preventDefault();richEnv.reveal?.(box.id);}}}>
+        <rect x={0} y={0} width={w} height={h} rx={7} fill={background} stroke={s.branchColor} strokeDasharray="4 3" />
+        <text x={w/2} y={h/2} dy=".35em" textAnchor="middle" fontFamily={s.fontFamily} fontSize={s.fontSize} fill={s.textColor}>🙈 ···</text>
+      </g>}
       <rect className="wm-ui wm-hover" x={-4} y={-4} width={w + 8} height={h + 8} rx={8} fill="none" stroke={withAlpha(SELECTION_COLOR, 0.4)} strokeWidth={1.5} />
       {selected && <rect className="wm-ui" x={-4} y={-4} width={w + 8} height={h + 8} rx={8} fill="none" stroke={SELECTION_COLOR} strokeWidth={2} />}
       {dropTarget && <rect className="wm-ui" x={-5} y={-5} width={w + 10} height={h + 10} rx={9} fill={withAlpha(SELECTION_COLOR, 0.08)} stroke={SELECTION_COLOR} strokeWidth={2} strokeDasharray="5 3" />}

@@ -22,7 +22,8 @@
 }
 
 /* 视图内容区去掉默认内边距,画布自己负责滚动和缩放 */
-.workspace-leaf-content[data-type="weilanx-mind-map"] > .view-content {
+.workspace-leaf-content[data-type="personal-mindmap-wmind"] > .view-content,
+.workspace-leaf-content[data-type="personal-mindmap-markdown"] > .view-content {
   padding: 0;
   overflow: hidden;
 }

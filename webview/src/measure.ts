@@ -1,9 +1,15 @@
 // 节点内容排版:文字换行、标记、标签、备注 / 链接图标 → 节点尺寸
 import type { ResolvedStyle } from "../../src/core/theme";
+import { isRichText, parseRich, richPlainText } from "./rich";
+import { measureRichBox } from "./RichTopic";
 import type { NodeSize } from "../../src/core/layout";
 
 export interface Metrics extends NodeSize {
   lines: string[];
+  rich?: boolean;
+  textH: number;
+  extraY: number;
+  extras: {text:string; kind:"note"|"callout"; y:number; h:number}[];
   lineHeight: number;
   font: string;
   /** 内容区域(相对节点左上角) */
@@ -22,6 +28,17 @@ export interface Metrics extends NodeSize {
 
 export interface Content {
   text: string;
+  width?: number;
+  studyQuestion?: boolean;
+  studyMultiple?: boolean;
+  studyOption?: boolean;
+  studyCorrect?: boolean;
+  studyShown?: boolean;
+  viewHidden?:boolean;
+  noteExpanded?: boolean;
+  noteWidth?:number;noteHeight?:number;noteMaxHeight?:number;
+  callout?: string | {text:string};
+  calloutColor?: string;
   markers?: string[];
   labels?: string[];
   note?: string;
@@ -90,7 +107,7 @@ export function bumpFontEpoch(): void {
 }
 
 export function measure(owner: object, c: Content, s: ResolvedStyle, placeholder: string): Metrics {
-  const key = [fontEpoch, s.textAlign, c.text, s.fontSize, s.bold, s.italic, s.fontFamily, s.shape, s.padX, s.padY, s.borderWidth, (c.markers ?? []).length, (c.labels ?? []).join("\u0001"), !!c.note, !!c.link].join("|");
+  const key = [fontEpoch, s.maxWidth, s.textAlign, c.text, s.fontSize, s.bold, s.italic, s.fontFamily, s.shape, s.padX, s.padY, s.borderWidth, (c.markers ?? []).length, (c.labels ?? []).join("\u0001"), !!c.note, !!c.link, c.width, c.noteExpanded,c.noteWidth,c.noteHeight,c.noteMaxHeight, c.note, typeof c.callout === "string" ? c.callout : c.callout?.text].join("|");
   const hit = cache.get(owner);
   if (hit && hit.key === key) return hit.m;
   const m = compute(c, s, placeholder);
@@ -101,10 +118,13 @@ export function measure(owner: object, c: Content, s: ResolvedStyle, placeholder
 function compute(c: Content, s: ResolvedStyle, placeholder: string): Metrics {
   const font = fontOf(s);
   const lineHeight = Math.round(s.fontSize * 1.4);
-  const maxW = s.kind === "root" ? MAX_TEXT_WIDTH * 1.3 : MAX_TEXT_WIDTH;
-  const lines = wrap(font, c.text || placeholder, maxW);
-  const textW = Math.max(s.fontSize, ...lines.map((l) => textWidth(font, l)));
-  const textH = lines.length * lineHeight;
+  let maxW = c.width && Number.isFinite(c.width) ? Math.max(48, Math.min(1200,c.width)) : s.maxWidth && Number.isFinite(s.maxWidth) ? Math.max(48,Math.min(1200,s.maxWidth)) : (s.kind === "root" ? MAX_TEXT_WIDTH * 1.3 : MAX_TEXT_WIDTH);
+  const rich = isRichText(c.text);
+  if(!c.width)maxW=Math.max(maxW,...parseRich(c.text).map(t=>t.width??0));
+  const lines = wrap(font, rich ? richPlainText(parseRich(c.text)) : c.text || placeholder, maxW);
+  const richBox = rich ? measureRichBox(c.text,font,lineHeight,maxW) : null;
+  const textW = c.width ? maxW : Math.max(s.fontSize, richBox?.w ?? Math.max(...lines.map((l) => textWidth(font, l))));
+  const textH = richBox?.h ?? lines.length * lineHeight;
   const markerSize = Math.round(Math.max(16, Math.min(22, s.fontSize * 1.15)));
   const nMarkers = c.markers?.length ?? 0;
   const markersW = nMarkers ? nMarkers * markerSize + (nMarkers - 1) * 3 + GAP : 0;
@@ -115,8 +135,21 @@ function compute(c: Content, s: ResolvedStyle, placeholder: string): Metrics {
   const labelWidths = (c.labels ?? []).map((l) => Math.ceil(textWidth(labelFont, l)) + 12);
   const labelsW = labelWidths.reduce((a, b) => a + b, 0) + Math.max(0, labelWidths.length - 1) * 4;
   const rowW = markersW + textW + iconsW;
-  const contentW = Math.max(rowW, labelsW);
-  const contentH = rowH + (labelWidths.length ? 5 + LABEL_H : 0);
+  const extras: Metrics["extras"] = [];
+  let extraY = rowH + (labelWidths.length ? 5 + LABEL_H : 0);
+  const callout = typeof c.callout === "string" ? c.callout : c.callout?.text;
+  let extrasW = 0;
+  for (const [kind,text] of [["callout",callout],["note",c.noteExpanded ? c.note : undefined]] as const) {
+    if (!text) continue;
+    const b = measureRichBox(text,font,lineHeight,kind==='note'?(c.noteWidth??320):maxW);
+    extrasW = Math.max(extrasW,b.w + 12);
+    if(kind==='note'&&c.noteWidth)extrasW=Math.max(extrasW,c.noteWidth);
+    const bodyH=kind==="note" ? Math.max(80,c.noteHeight??Math.min(c.noteMaxHeight??240,b.h)) : b.h;
+    extras.push({kind,text,y:extraY+8,h:bodyH+12});
+    extraY += bodyH + 20;
+  }
+  const contentW = Math.max(rowW, labelsW,extrasW);
+  const contentH = extraY;
 
   let padX = s.padX;
   let padY = s.padY;
@@ -144,6 +177,10 @@ function compute(c: Content, s: ResolvedStyle, placeholder: string): Metrics {
     h,
     underline: s.shape === "underline",
     lines,
+    rich,
+    textH,
+    extraY:padY,
+    extras,
     lineHeight,
     font,
     textX: rowX + markersW,

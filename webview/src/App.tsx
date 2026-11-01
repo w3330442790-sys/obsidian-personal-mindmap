@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { docLook, parse, serialize, type ParseError } from "../../src/core/doc";
 import * as ops from "../../src/core/ops";
+import { deleteOnly, splitIntoChildren, projectView, setFoldLevel, resizeRange, isAnswer, isQuestion } from "../../src/core/fusion-ops";
+import { RichEnvironment, registerRichRenderer } from "./RichTopic";
+import { emojiMarkerGroups, hasEmojiMarker, toggleEmojiMarker, type EmojiMarkerGroup } from "../../src/core/emoji-markers";
 import { OpError } from "../../src/core/ops";
 import { getTopic, indexDoc } from "../../src/core/query";
-import { markdownLosses, textToTopics, toMarkdown } from "../../src/core/markdown";
+import { markdownLosses, toMarkdown } from "../../src/core/markdown";
+import { clipboardTopics } from '../../src/fusion/clipboard';
+import { convertPrimaryLevelKind } from '../../src/fusion/markdown';
+import { setImageWidth } from '../../vendor/gogoga/src/inline';
 import { relationshipGeom } from "../../src/core/layout/geometry";
 import type { Issue, MindDoc, Point, Topic } from "../../src/core/types";
 import type { Host, HostCommand, HostKind, InMsg } from "./host";
@@ -16,7 +22,7 @@ import { SearchBar, type SearchMode } from "./Search";
 import { ContextMenu } from "./ContextMenu";
 import { FormatPanel } from "./FormatPanel";
 import { Outline } from "./Outline";
-import { buildSvg, svgToPngBase64 } from "./export";
+import { prepareSvg, svgToPngBase64 } from "./export";
 import { handFontCss, loadHandFonts } from "./handFonts";
 import { bumpFontEpoch } from "./measure";
 import { setLang, t } from "./i18n";
@@ -49,6 +55,13 @@ export interface Actions {
   exportAs(format: ExportFormat): void;
   openLink(id: string): void;
   notify(msg: string): void;
+  feature(command: string, id?: string): void;
+  emojiGroups:EmojiMarkerGroup[];
+  toggleEmoji(emoji:string):void;
+  locked: boolean;
+  studyMode: boolean;
+  showNotes: boolean;
+  showCallouts: boolean;
 }
 
 /** 只影响显示、不写进文件的设置,记在本机 */
@@ -79,13 +92,31 @@ export function App({ host }: { host: Host }) {
   const [error, setError] = useState<ParseError | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [showIssues, setShowIssues] = useState(false);
-  const [readOnly, setReadOnly] = useState(false);
+  const [sourceReadOnly, setReadOnly] = useState(false);
+  const [locked, setLocked] = useState(host.initialState?.locked ?? false);
+  const [studyMode, setStudyMode] = useState(false);
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [showHidden,setShowHidden]=useState(host.initialState?.showHidden??host.editorSettings?.showHidden??false);
+  const [outlineDock,setOutlineDock]=useState(host.editorSettings?.outlineOpen??false);
+  const [markerPicker,setMarkerPicker]=useState(false);
+  const [linkChoices,setLinkChoices]=useState<{start:number;end:number;items:string[];index:number}|null>(null);
+  const emojiGroups=emojiMarkerGroups(host.editorSettings?.customMarkers,host.editorSettings?.customMarkersExclusive);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [showNotes, setShowNotes] = useState(host.initialState?.notesExpanded??host.editorSettings?.notesExpanded ?? false);
+  const [folds,setFolds]=useState<Record<string,boolean>>({});
+  const [noteCards,setNoteCards]=useState(host.initialState?.noteCards??{});
+  const [showCallouts, setShowCallouts] = useState(!host.initialState?.calloutsHidden);
+  const [featureEdit, setFeatureEdit] = useState<{id:string;kind:"callout"|"width"|"calloutColor";value:string}|null>(null);
+  const readOnly = sourceReadOnly || locked || studyMode || !!host.readOnly;
+  const readOnlyRef=useRef(readOnly);readOnlyRef.current=readOnly;
+  const revealStudy = (id:string) => setRevealed(old => new Set([...old,id]));
   const [hostKind, setHostKind] = useState<HostKind>("preview");
   const fileName = useRef("mindmap");
   const history = useRef(new History());
   const [, bump] = useReducer((x: number) => x + 1, 0);
-  const [selection, setSelectionState] = useState<string[]>([]);
-  const selRef = useRef<string[]>([]);
+  const [selection, setSelectionState] = useState<string[]>(host.initialState?.selection ?? []);
+  const selRef = useRef<string[]>(host.initialState?.selection ?? []);
   const [editing, setEditingState] = useState<Editing | null>(null);
   const editingRef = useRef<Editing | null>(null);
   const [view, setView] = useState<"map" | "outline">("map");
@@ -117,10 +148,10 @@ export function App({ host }: { host: Host }) {
   const [panelFocus, setPanelFocus] = useState<{ field: "note" | "link"; n: number } | null>(null);
   const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
   const [dark, setDark] = useState(detectDark);
-  const [viewport, setViewportState] = useState<Viewport>({ x: 0, y: 0, k: 1 });
+  const [viewport, setViewportState] = useState<Viewport>(host.initialState?.viewport ?? { x: 0, y: 0, k: 1 });
   const vpRef = useRef(viewport);
   const size = useRef({ w: 0, h: 0 });
-  const needCenter = useRef(true);
+  const needCenter = useRef(!host.initialState?.viewport);
   const [toast, setToast] = useState<string | null>(null);
   const captureRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -143,6 +174,8 @@ export function App({ host }: { host: Host }) {
     editingRef.current = e;
     setEditingState(e);
   };
+
+  useEffect(() => { host.onViewState?.({viewport,selection,locked,showHidden,notesExpanded:showNotes,calloutsHidden:!showCallouts,noteCards,outlineOpen:outlineDock}); }, [viewport,selection,locked,showHidden,showNotes,showCallouts,noteCards,outlineDock]);
 
   // 手绘字体:文档里出现新字符时加载对应分片,加载完重新排版
   const hand = !!doc && docLook(doc) === "hand";
@@ -170,7 +203,12 @@ export function App({ host }: { host: Host }) {
     };
   }, [doc, hand]);
 
-  const scene = useMemo(() => (doc ? buildScene(doc, dark) : null), [doc, dark, fontTick]);
+  const viewDoc = useMemo(() => doc ? projectView(doc,{focusId,hidden,showHidden,studyMode,revealed,showNotes,showCallouts,folds,noteCards,noteMaxWidth:host.editorSettings?.noteMaxWidth,noteMaxHeight:host.editorSettings?.noteMaxHeight}) : null,[doc,focusId,hidden,showHidden,studyMode,revealed,showNotes,showCallouts,folds,noteCards]);
+  const scene = useMemo(() => {
+    if(!viewDoc)return null;
+    const restore=registerRichRenderer({renderMath:host.renderMath,resolveImage:host.resolveResource,renderPdfCrop:host.renderPdfCrop,renderMarkdown:host.renderMarkdown});
+    try{return buildScene(viewDoc,dark,host.editorSettings);}finally{restore();}
+  }, [viewDoc, dark, fontTick]);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
 
@@ -196,10 +234,11 @@ export function App({ host }: { host: Host }) {
     setError(null);
     setIssues(r.issues);
     setReadOnly(r.readOnly);
+    if(initial){setFolds({});setHidden(new Set());setFocusId(null);setRevealed(new Set());}
     if (!initial && docRef.current) history.current.push(docRef.current);
     setDoc(r.doc);
     const idx = indexDoc(r.doc);
-    setSelection(selRef.current.filter((id) => idx.has(id) || ops.findRange(r.doc!, id) || r.doc!.relationships?.some((x) => x.id === id)));
+    setSelection((initial && host.initialState?.selection ? host.initialState.selection : selRef.current).filter((id) => idx.has(id) || ops.findRange(r.doc!, id) || r.doc!.relationships?.some((x) => x.id === id)));
     if (initial) needCenter.current = true;
     bump();
   };
@@ -208,7 +247,7 @@ export function App({ host }: { host: Host }) {
 
   const commit = (next: MindDoc, select?: string[]) => {
     const cur = docRef.current;
-    if (!cur || readOnly) return;
+    if (!cur || readOnlyRef.current) return;
     if (next !== cur) {
       history.current.push(cur);
       setDoc(next);
@@ -228,7 +267,7 @@ export function App({ host }: { host: Host }) {
   };
 
   const undo = () => {
-    if (editingRef.current || !docRef.current) return;
+    if (readOnly || editingRef.current || !docRef.current) return;
     const prev = history.current.undo(docRef.current);
     if (!prev) return;
     setDoc(prev);
@@ -236,7 +275,7 @@ export function App({ host }: { host: Host }) {
     bump();
   };
   const redo = () => {
-    if (editingRef.current || !docRef.current) return;
+    if (readOnly || editingRef.current || !docRef.current) return;
     const next = history.current.redo(docRef.current);
     if (!next) return;
     setDoc(next);
@@ -263,7 +302,7 @@ export function App({ host }: { host: Host }) {
       size.current = { w, h };
       if (needCenter.current && sceneRef.current && w) {
         needCenter.current = false;
-        fit();
+        if(host.editorSettings?.openView==="center")setViewport({x:w/2,y:h/2,k:1});else fit();
       }
     },
     [fit]
@@ -272,7 +311,7 @@ export function App({ host }: { host: Host }) {
   useEffect(() => {
     if (needCenter.current && scene && size.current.w) {
       needCenter.current = false;
-      fit();
+      if(host.editorSettings?.openView==="center")setViewport({x:size.current.w/2,y:size.current.h/2,k:1});else fit();
     }
   }, [scene, fit]);
 
@@ -315,12 +354,12 @@ export function App({ host }: { host: Host }) {
     const cur = textOf(d, id);
     if (cur === null) return;
     setSelection([id]);
-    setEditing({ id, value: initial ?? cur, selectAll: initial === undefined });
+    setEditing({ id, value: initial ?? cur, selectAll: initial === undefined && host.editorSettings?.editCaret!=="end" });
     requestAnimationFrame(() => {
       const el = captureRef.current;
       if (!el) return;
       el.focus({ preventScroll: true });
-      if (initial === undefined) el.select();
+      if (initial === undefined && host.editorSettings?.editCaret!=="end") el.select();
       else el.setSelectionRange(el.value.length, el.value.length);
     });
     reveal(id);
@@ -410,6 +449,7 @@ export function App({ host }: { host: Host }) {
   const toggleFold = (ids: string[]) => {
     const d = docRef.current;
     if (!d || !ids.length) return;
+    if(readOnly){setFolds(old=>({...old,...Object.fromEntries(ids.filter(id=>id!==d.root.id).map(id=>[id,!(old[id]??getTopic(d,id)?.collapsed)]))}));return;}
     commit(ops.toggleCollapsed(d, ids));
   };
 
@@ -449,12 +489,14 @@ export function App({ host }: { host: Host }) {
   const setSubtreeFold = (id: string, collapsed: boolean) => {
     const d = docRef.current;
     if (!d) return;
+    if(readOnly){const changes:Record<string,boolean>={};const visit=(tp:Topic)=>{if(tp.id!==d.root.id&&tp.children?.length)changes[tp.id]=collapsed;tp.children?.forEach(visit);};const tp=getTopic(d,id);if(tp)visit(tp);setFolds(old=>({...old,...changes}));return;}
     safe(() => commit(ops.setSubtreeCollapsed(d, id, collapsed)));
   };
 
   // ---------- 查找 / 替换 ----------
 
   const openSearch = (mode: SearchMode) => {
+    if(studyMode){notify("请先退出背诵模式再查找原文");return;}
     if (editingRef.current) commitEdit();
     if (view !== "map") setView("map");
     setSearch((s) => ({ mode: readOnly ? "find" : mode, n: (s?.n ?? 0) + 1 }));
@@ -470,7 +512,7 @@ export function App({ host }: { host: Host }) {
     const d = docRef.current;
     if (!d) return;
     const next = ops.revealTopic(d, id);
-    if (next !== d) commit(next);
+    if (next !== d){if(readOnly){const changes:Record<string,boolean>={};for(const [key,value]of indexDoc(next))if(value.topic.collapsed!==getTopic(d,key)?.collapsed)changes[key]=!!value.topic.collapsed;setFolds(old=>({...old,...changes}));}else commit(next);}
     setSelection([id]);
     requestAnimationFrame(() => reveal(id));
   };
@@ -487,7 +529,8 @@ export function App({ host }: { host: Host }) {
 
   // ---------- 导出 ----------
 
-  const exportAs = async (format: ExportFormat) => {
+  const exportAs = async (format: ExportFormat, copy = false) => {
+    try {
     const d = docRef.current;
     const s = sceneRef.current;
     if (!d || !s) return;
@@ -502,9 +545,10 @@ export function App({ host }: { host: Host }) {
     const world = rootRef.current?.querySelector(".wm-world") as SVGGElement | null;
     if (!world) return;
     const fontCss = s.look === "hand" ? await handFontCss(world.textContent ?? "") : "";
-    const { svg, w, h } = buildSvg(world, s.palette.background, fontCss);
+    const { svg, w, h } = await prepareSvg(world, s.palette.background, fontCss);
     if (format === "svg") host.post({ type: "export", format, data: svg, encoding: "utf8", defaultName: `${name}.svg` });
-    else host.post({ type: "export", format, data: await svgToPngBase64(svg, w, h, 2), encoding: "base64", defaultName: `${name}.png` });
+    else host.post({ type: "export", format, data: await svgToPngBase64(svg, w, h, 2), encoding: "base64", defaultName: `${name}.png`, copy });
+    } catch(error){notify(error instanceof Error?error.message:String(error));}
   };
 
   const openLink = (id: string) => {
@@ -513,6 +557,23 @@ export function App({ host }: { host: Host }) {
   };
 
   // ---------- 剪贴板 ----------
+
+  const attachImages = async(files:File[],id:string) => {
+    if(readOnly||!host.saveBinary||!files.length)return;
+    try {
+      const links:string[]=[];
+      for(const file of files)links.push(await host.saveBinary(file.name||`image-${Date.now()}.png`,await file.arrayBuffer(),file.type));
+      const d=docRef.current,tp=d&&getTopic(d,id);if(!d||!tp)return;
+      commit(ops.updateTopic(d,id,{note:[tp.note,...links.map(link=>`![[${link}]]`)].filter(Boolean).join('\n\n')}));
+    }catch(error){notify(`图片插入失败：${error instanceof Error?error.message:String(error)}`);}
+  };
+  const insertLinkChoice = (choice:string) => {
+    const current=editingRef.current;if(!current||!linkChoices)return;
+    const value=current.value.slice(0,linkChoices.start)+`[[${choice}]]`+current.value.slice(linkChoices.end);
+    const cursor=linkChoices.start+choice.length+4;
+    setEditing({...current,value});setLinkChoices(null);
+    requestAnimationFrame(()=>{captureRef.current?.focus();captureRef.current?.setSelectionRange(cursor,cursor);});
+  };
 
   useEffect(() => {
     const inField = (e: Event) => {
@@ -533,11 +594,14 @@ export function App({ host }: { host: Host }) {
     };
     const onPaste = (e: ClipboardEvent) => {
       const d = docRef.current;
-      if (!d || editingRef.current || inField(e) || readOnly || view !== "map") return;
+      if(!d||readOnly||view!=='map'||!rootRef.current?.contains(e.target as Node))return;
+      const images=Array.from(e.clipboardData?.files??[]).filter(file=>file.type.startsWith('image/'));
+      if(images.length&&host.saveBinary){e.preventDefault();void attachImages(images,editingRef.current?.id??selRef.current[0]??d.root.id);return;}
+      if (editingRef.current || inField(e)) return;
       const text = e.clipboardData?.getData("text/plain") ?? "";
       let topics: Topic[] | null = null;
       if (clip.current && text === clip.current.text) topics = clip.current.topics;
-      else if (text.trim()) topics = textToTopics(text);
+      else if (text.trim()) topics = clipboardTopics(text);
       if (!topics?.length) return;
       e.preventDefault();
       const ids = selectedTopics();
@@ -561,7 +625,46 @@ export function App({ host }: { host: Host }) {
 
   // ---------- 宿主消息 ----------
 
+  const foldToLevel=(level:number|null,fromSelection=false)=>{const d=docRef.current;if(!d)return;const base=(fromSelection?selectedTopics()[0]:undefined)??focusId??d.root.id;safe(()=>{const next=setFoldLevel(d,level,base);if(readOnly){const changes:Record<string,boolean>={};const visit=(tp:Topic)=>{changes[tp.id]=!!tp.collapsed;tp.children?.forEach(visit);};const from=getTopic(next,base);if(from)visit(from);setFolds(old=>({...old,...changes}));}else commit(next);});requestAnimationFrame(()=>requestAnimationFrame(fit));};
   const runCommand = (c: HostCommand) => {
+    if(c==='flush'){const active=document.activeElement;if(active&&rootRef.current?.contains(active)&&active!==captureRef.current)(active as HTMLElement).blur();if(editingRef.current)commitEdit();return;}
+    if(c==='syncPending'){
+      const e=editingRef.current,d=docRef.current;if(!e||!d||readOnlyRef.current||textOf(d,e.id)===e.value)return;
+      const next=getTopic(d,e.id)?ops.setText(d,e.id,e.value):ops.findRange(d,e.id)?ops.updateRange(d,e.id,{text:e.value}):ops.updateRelationship(d,e.id,{text:e.value});
+      commit(next);return;
+    }
+    if(c==='exportMarkdown'){void exportAs('md');return;}
+    if(String(c).startsWith("showLevel:")){const n=Number(String(c).slice(10));if(Number.isFinite(n))foldToLevel(n===0?null:n,true);return;}
+    const features:Record<string,string>={toggleLock:"lock",toggleStudy:"study",toggleNotes:"notes",toggleCallouts:"callouts",focusBranch:"focus",deleteOnly:"deleteOnly",splitTopic:"split"};
+    if(features[c])return feature(features[c]);
+    if(c==="addChild")return addTopic("child");
+    if(c==="addSibling")return addTopic("sibling");
+    if(c==="insertBefore")return addTopic("before");
+    if(c==="insertParent")return addTopic("parent");
+    if(c==="editNode"){if(selRef.current[0])startEdit(selRef.current[0]);return;}
+    if(c==="callout")return feature("callout");
+    if(c==="addRelationship")return startLinking();
+    if(c==="deleteNode")return remove();
+    if(c==="summary")return addRange("summaries");
+    if(c==="boundary")return addRange("boundaries");
+    if(c==="linkNote"){
+      const id=selRef.current[0],d=docRef.current;if(host.pickNote&&id&&d&&!readOnly){void host.pickNote().then(link=>{const next=docRef.current;if(link&&next&&getTopic(next,id))commit(ops.updateTopic(next,id,{link:`[[${link}]]`}));});}
+      else{setPanel(true);setPanelFocus({field:"link",n:Date.now()});}return;
+    }
+    if(c==="moveUp"||c==="moveDown"||c==="indent"||c==="outdent"){
+      const d=docRef.current,id=selectedTopics()[0];if(!d||!id||readOnly)return;
+      const idx=indexDoc(d),e=idx.get(id);if(!e)return;
+      if(c==="moveUp"||c==="moveDown")safe(()=>commit(ops.moveSibling(d,id,c==="moveUp"?-1:1)));
+      else if(c==="indent"&&e.parent&&e.index>0)safe(()=>commit(ops.move(d,id,e.parent!.children![e.index-1].id)));
+      else if(c==="outdent"&&e.parent){const p=idx.get(e.parent.id);if(p?.parent)safe(()=>commit(ops.move(d,id,p.parent!.id,p.index+1)));}
+      return;
+    }
+    if(c==="toggleOutline"){if(!studyMode)setOutlineDock(value=>!value);return;}
+    if(c==="exitFocus"){setFocusId(null);requestAnimationFrame(()=>requestAnimationFrame(fit));return;}
+    if(c==="exportSvg")return void exportAs("svg");
+    if(c==="copyImage")return void exportAs("png",true);
+    if(c==="fold")return toggleFold(selectedTopics());
+    if(c==="expandAll"||c==="collapseAll"){const d=docRef.current;if(d){if(readOnly)setSubtreeFold(d.root.id,c==="collapseAll");else commit(ops.setAllCollapsed(d,c==="collapseAll"));}return;}
     if (c === "undo") undo();
     else if (c === "redo") redo();
     else if (c === "zoomIn") zoom(1.2);
@@ -570,6 +673,7 @@ export function App({ host }: { host: Host }) {
     else if (c === "export") exportAs("png");
     else if (c === "find" || c === "replace") openSearch(c);
   };
+  const foldRef = useRef(foldToLevel);foldRef.current=foldToLevel;
   const runRef = useRef(runCommand);
   runRef.current = runCommand;
   const loadRef = useRef(load);
@@ -582,7 +686,11 @@ export function App({ host }: { host: Host }) {
         setHostKind(m.host);
         fileName.current = m.fileName;
         loadRef.current(m.text, true);
-      } else if (m.type === "update") loadRef.current(m.text, false);
+      } else if(m.type === "setShowHidden"){setShowHidden(m.showHidden);}
+      else if(m.type === "setLocked"){setLocked(m.locked);setEditing(null);setLinkingFrom(null);}
+      else if(m.type === "foldLevel"){foldRef.current(m.level,!!m.fromSelection);}
+      else if(m.type === "select"){setSelection(m.ids);if(m.center&&m.ids[0])requestAnimationFrame(()=>reveal(m.ids[0]));}
+      else if (m.type === "update") loadRef.current(m.text, false);
       else if (m.type === "command") runRef.current(m.command);
     });
     host.post({ type: "ready" });
@@ -667,6 +775,7 @@ export function App({ host }: { host: Host }) {
           handled();
           if (linkingFrom) setLinkingFrom(null);
           else if (search) closeSearch();
+          else if (focusId) { setFocusId(null); requestAnimationFrame(fit); }
           else setSelection([]);
           return;
         case "ArrowUp":
@@ -701,6 +810,8 @@ export function App({ host }: { host: Host }) {
   // ---------- 画布回调 ----------
 
   const canvasApi: CanvasApi = {
+    resizeNote(id,w,h){setNoteCards(cards=>({...cards,[id]:{...cards[id],w:Math.round(Math.max(120,Math.min(900,w))),h:Math.round(Math.max(80,Math.min(900,h)))}}));},
+    collapseNote(id){setNoteCards(cards=>({...cards,[id]:{...cards[id],collapsed:!cards[id]?.collapsed}}));},
     select(ids, mode = "replace") {
       if (editingRef.current) commitEdit();
       if (mode === "replace") setSelection(ids);
@@ -714,8 +825,13 @@ export function App({ host }: { host: Host }) {
     startEdit: (id) => startEdit(id),
     toggleFold: (id) => toggleFold([id]),
     openLink,
-    openNote(id) {
+    openTarget(target){host.post({type:"openLink",target});},
+    toggleTask(id){const d=docRef.current;if(!d||readOnly)return;const tp=getTopic(d,id);if(tp&&/^\s*\[[ xX]\]\s/.test(tp.text))commit(ops.setText(d,id,tp.text.replace(/^(\s*\[)([ xX])(\])/,(_,a,state,b)=>a+(state===" "?"x":" ")+b)));},
+    openNote(id,edit) {
+      const source=docRef.current&&getTopic(docRef.current,id);if(studyMode&&source&&isAnswer(source)&&!revealed.has(id)){notify("请先揭晓答案再查看备注");return;}
+      if(showNotes&&!edit){setNoteCards(cards=>({...cards,[id]:{...cards[id],collapsed:!cards[id]?.collapsed}}));return;}
       setSelection([id]);
+      if(host.editNote){const tp=docRef.current&&getTopic(docRef.current,id);if(tp)host.editNote(tp.note??"",text=>{const d=docRef.current;if(d&&getTopic(d,id))commit(ops.updateTopic(d,id,{note:text||undefined}));},readOnly);return;}
       setPanel(true);
       setPanelFocus({ field: "note", n: Date.now() });
     },
@@ -723,8 +839,11 @@ export function App({ host }: { host: Host }) {
       const d = docRef.current;
       if (!d) return;
       safe(() => {
-        if (target.type === "child") commit(ops.moveMany(d, ids, target.parentId), ids);
-        else if (target.type === "sibling") commit(ops.moveMany(d, ids, target.parentId, target.index), ids);
+        if (target.type === "child"||target.type==='sibling'){
+          let next=ops.moveMany(d,ids,target.parentId,target.type==='sibling'?target.index:undefined);
+          if(target.side&&target.parentId===d.root.id)for(const id of ids)next=ops.updateTopic(next,id,{side:target.side});
+          commit(next,ids);
+        }
         else commit(ops.toFloating(d, ids[0], target.pos), ids);
       });
     },
@@ -744,6 +863,8 @@ export function App({ host }: { host: Host }) {
         commit(r.doc, [r.id]);
       });
     },
+    setWidth(id,width){const d=docRef.current;if(d){const patch={width:Math.max(60,Math.min(1200,Math.round(width)))};commit(getTopic(d,id)?ops.updateTopic(d,id,patch):ops.updateRange(d,id,patch));}},
+    resizeRange(id,which,anchor){const d=docRef.current;if(d)commit(resizeRange(d,id,which,anchor));},
     setControls(relId, controls, done) {
       const d = docRef.current;
       if (!d || !done) return;
@@ -755,6 +876,34 @@ export function App({ host }: { host: Host }) {
       if (editingRef.current) commitEdit();
       setCtxMenu({ id, x, y });
     },
+  };
+
+  const feature = (command:string, explicitId?:string) => {
+    const d=docRef.current; if(!d)return;
+    const id=explicitId??selRef.current[0]??d.root.id; const tp=getTopic(d,id);
+    if(command==="lock"){setFolds({});if(editingRef.current)commitEdit();setLocked(v=>!v);setLinkingFrom(null);return;}
+    if(command==="study"){setView("map");setSearch(null);if(editingRef.current)commitEdit();setStudyMode(v=>!v);setRevealed(new Set());setLinkingFrom(null);return;}
+    if(command==="notes"){setShowNotes(v=>!v);return;}
+    if(command==="callouts"){setShowCallouts(v=>!v);return;}
+    if(command==="reveal"){revealStudy(id);return;}
+    if(command==='fold'){toggleFold([id]);return;}
+    if(command==='editNote'){canvasApi.openNote(id,true);return;}
+    if(command==="focus"){if(tp){setFocusId(id===d.root.id?null:id);setSelection([id]);requestAnimationFrame(()=>requestAnimationFrame(fit));}return;}
+    if(command==="hide"){if(id!==d.root.id){if(readOnly)setHidden(v=>new Set([...v,id]));else commit(ops.updateTopic(d,id,{hidden:tp?.hidden?undefined:true}));}return;}
+    if(command==="showAll"){setHidden(new Set());setShowHidden(v=>!v);return;}
+    if(command==="outlineDock"){if(!studyMode)setOutlineDock(v=>!v);return;}
+    if(command==="markers"){setMarkerPicker(true);return;}
+    if(command==="width"&&!readOnly&&!tp){const range=ops.findRange(d,id)?.range;if(range)setFeatureEdit({id,kind:"width",value:typeof range.width==="number"?String(range.width):""});return;}
+    if(readOnly||!tp)return;
+    if(command==='heading'||command==='list'){const next=convertPrimaryLevelKind(d,id,command);if(next===d)notify('此处无法转换为该层级类型');else commit(next);return;}
+    if(command==='sideLeft'||command==='sideRight'){commit(ops.updateTopic(d,id,{side:command==='sideLeft'?'left':'right'}));return;}
+    if(command==="deleteOnly"){safe(()=>commit(deleteOnly(d,selectedTopics()),[]));return;}
+    if(command==="split"){safe(()=>commit(splitIntoChildren(d,id)));return;}
+    if(command==="calloutColor"){setFeatureEdit({id,kind:"calloutColor",value:typeof tp.calloutColor==="string"?tp.calloutColor:""});return;}
+    if(command==="callout"){const c=tp.callout;setFeatureEdit({id,kind:"callout",value:typeof c==="string"?c:typeof c==="object"&&c?String((c as {text?:string}).text??""):""});return;}
+    if(command==="width"){setFeatureEdit({id,kind:"width",value:typeof tp.width==="number"?String(tp.width):""});return;}
+    if(command==="task"){commit(ops.setText(d,id,/^\s*\[[ xX]\]\s/.test(tp.text)?tp.text.replace(/^\s*\[[ xX]\]\s*/,""):"[ ] "+tp.text));return;}
+    if(command==="answer"){const markers=tp.markers??[];commit(ops.updateTopic(d,id,{markers:markers.includes("🙈")?markers.filter(m=>m!=="🙈"):[...markers,"🙈"]}));return;}
   };
 
   const actions: Actions | null = doc
@@ -778,7 +927,8 @@ export function App({ host }: { host: Host }) {
         canRedo: history.current.canRedo,
         exportAs,
         openLink,
-        notify,
+        notify, feature, locked, studyMode, showNotes, showCallouts,emojiGroups,
+        toggleEmoji:emoji=>{const d=docRef.current;if(d&&!readOnly)commit(toggleEmojiMarker(d,selectedTopics(),emoji,emojiGroups));},
       }
     : null;
 
@@ -858,9 +1008,24 @@ export function App({ host }: { host: Host }) {
   }
 
   return (
-    <div className={"wm-root wm-app" + (dark ? " wm-dark" : "")} ref={rootRef}>
-      <Toolbar actions={actions} view={view} setView={setView} panel={panel} togglePanel={() => setPanel((p) => (localStorage.setItem("wmind-panel", p ? "0" : "1"), !p))} laser={laser} toggleLaser={() => setLaser((l) => !l)} prefs={prefs} setPrefs={setPrefs} openSearch={() => openSearch("find")} />
+    <div className={"wm-root wm-app" + (dark ? " wm-dark" : "")} ref={rootRef}
+      onDragOver={event=>{if(!readOnly&&host.saveBinary&&Array.from(event.dataTransfer.items).some(item=>item.kind==='file'&&item.type.startsWith('image/')))event.preventDefault();}}
+      onDrop={event=>{const files=Array.from(event.dataTransfer.files).filter(file=>file.type.startsWith('image/'));if(files.length&&host.saveBinary&&!readOnly){event.preventDefault();event.stopPropagation();void attachImages(files,selRef.current[0]??doc.root.id);}}}>
+      <div style={{display:"flex",flex:1,minHeight:0,minWidth:0,flexDirection:host.editorSettings?.toolbarPosition==="left"?"row":host.editorSettings?.toolbarPosition==="right"?"row-reverse":host.editorSettings?.toolbarPosition==="bottom"?"column-reverse":"column"}}>
+      <Toolbar position={host.editorSettings?.toolbarPosition} actions={actions} view={view} setView={value=>{if(studyMode&&value==="outline"){notify("请先退出背诵模式再打开大纲");return;}setView(value);}} panel={panel} togglePanel={() => setPanel((p) => (localStorage.setItem("wmind-panel", p ? "0" : "1"), !p))} laser={laser} toggleLaser={() => setLaser((l) => !l)} prefs={prefs} setPrefs={setPrefs} openSearch={() => openSearch("find")} />
+      <div style={{display:"flex",flexDirection:"column",flex:1,minWidth:0,minHeight:0}}>
+      {focusId && <nav aria-label="Branch breadcrumbs" style={{display:"flex",gap:8,padding:"6px 12px"}}>
+        {(() => {const path:Topic[]=[];const idx=indexDoc(doc);let e=idx.get(focusId);while(e){path.unshift(e.topic);e=e.parent?idx.get(e.parent.id):undefined;}return path.map(tp=><button key={tp.id} onClick={()=>feature("focus",tp.id)}>{tp.text || "Untitled"}</button>);})()}
+        <span>Esc · 返回全图</span>
+      </nav>}
+      {(studyMode || locked || (hidden.size>0||[...indexDoc(doc).values()].some(e=>e.topic.hidden))) && <div style={{padding:"4px 12px",display:"flex",gap:12}}>
+        {locked && <span>🔒 只读</span>}{studyMode && <span>学习模式 · 点击题目或遮挡内容揭晓</span>}{(hidden.size>0||[...indexDoc(doc).values()].some(e=>e.topic.hidden)) && <button onClick={()=>feature("showAll")}>{showHidden?"隐藏已隐藏节点":"显示隐藏节点"}</button>}
+      </div>}
       <div className="wm-main">
+        {outlineDock&&!studyMode&&view==="map"&&<aside aria-label="大纲面板" style={{width:280,minWidth:180,maxWidth:"40%",resize:"horizontal",overflow:"auto",borderRight:"1px solid #8884",display:"flex",flexDirection:"column"}}>
+          <div style={{padding:8,display:"flex",justifyContent:"space-between"}}><span>大纲</span><button onClick={()=>setOutlineDock(false)}>×</button></div>
+          <Outline host={host} docked wrap={host.editorSettings?.outlineWrap} actions={{...actions,doc:viewDoc!,select:ids=>{setSelection(ids);if(ids[0])requestAnimationFrame(()=>reveal(ids[0]));}}} />
+        </aside>}
         <div className="wm-stage">
           {issues.length > 0 && (
             <div className="wm-issues">
@@ -881,8 +1046,9 @@ export function App({ host }: { host: Host }) {
             </div>
           )}
           {view === "map" ? (
+            <RichEnvironment.Provider value={{studyMode,revealed,showNotes,reveal:revealStudy,renderMath:host.renderMath,resolveImage:host.resolveResource,renderPdfCrop:host.renderPdfCrop,renderMarkdown:host.renderMarkdown,openTag:host.openTag,hoverLink:host.hoverLink,onImageResize:readOnly?undefined:(id,width)=>{const d=docRef.current,tp=d&&getTopic(d,id);if(d&&tp)commit(ops.setText(d,id,setImageWidth(tp.text,width)));}}}>
             <Canvas
-              doc={doc}
+              doc={viewDoc!}
               scene={scene}
               selection={selection}
               linkingFrom={linkingFrom}
@@ -897,9 +1063,12 @@ export function App({ host }: { host: Host }) {
               matches={found.ids}
               currentMatch={found.current}
               pending={hand && fontsPending}
+              settings={host.editorSettings}
+              onStudyReveal={studyMode ? (id) => { const topic=getTopic(doc,id);if(topic&&(isAnswer(topic)||isQuestion(topic)))revealStudy(id); } : undefined}
             />
+            </RichEnvironment.Provider>
           ) : (
-            <Outline actions={actions} />
+            <Outline host={host} actions={actions} />
           )}
           {laser && view === "map" && <Laser onExit={exitLaser} />}
           {search && view === "map" && (
@@ -924,8 +1093,23 @@ export function App({ host }: { host: Host }) {
                 y={ctxMenu.y}
                 onClose={closeCtxMenu}
                 items={[
-                  { icon: <Icon.expand />, label: t("expandSubtree"), disabled: readOnly || !kids, run: () => setSubtreeFold(ctxMenu.id, false) },
-                  { icon: <Icon.collapse />, label: t("collapseSubtree"), disabled: readOnly || !kids, run: () => setSubtreeFold(ctxMenu.id, true) },
+                  { icon: <Icon.map />, label: "聚焦分支", run: () => feature("focus", ctxMenu.id) },
+                  { icon: <Icon.minus />, label: tp?.hidden?"取消隐藏分支":"隐藏分支", disabled: ctxMenu.id===doc.root.id, run: () => feature("hide", ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "添加 / 编辑标注", disabled: readOnly, run: () => feature("callout", ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "查看 / 编辑备注",run:()=>feature('editNote',ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "标记",disabled:readOnly,run:()=>feature("markers",ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "标注颜色",disabled:readOnly||!tp?.callout,run:()=>feature("calloutColor",ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "节点宽度", disabled: readOnly, run: () => feature("width", ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "固定到左侧",disabled:readOnly||indexDoc(doc).get(ctxMenu.id)?.parent?.id!==doc.root.id,run:()=>feature('sideLeft',ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "固定到右侧",disabled:readOnly||indexDoc(doc).get(ctxMenu.id)?.parent?.id!==doc.root.id,run:()=>feature('sideRight',ctxMenu.id) },
+                  { icon: <Icon.subtopic />, label: "按标点拆成子节点", disabled: readOnly, run: () => feature("split", ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "本级转为标题",disabled:readOnly||ctxMenu.id===doc.root.id,run:()=>feature('heading',ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "本级转为列表",disabled:readOnly||ctxMenu.id===doc.root.id,run:()=>feature('list',ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "任务复选框", disabled: readOnly, run: () => feature("task", ctxMenu.id) },
+                  { icon: <Icon.topic />, label: "答案标记 🙈", disabled: readOnly, run: () => feature("answer", ctxMenu.id) },
+                  { icon: <Icon.trash />, label: "仅删除节点，保留子节点", disabled: readOnly || ctxMenu.id===doc.root.id, run: () => feature("deleteOnly", ctxMenu.id) },
+                  { icon: <Icon.expand />, label: t("expandSubtree"), disabled: !kids, run: () => setSubtreeFold(ctxMenu.id, false) },
+                  { icon: <Icon.collapse />, label: t("collapseSubtree"), disabled: !kids, run: () => setSubtreeFold(ctxMenu.id, true) },
                 ]}
               />
             );
@@ -946,11 +1130,19 @@ export function App({ host }: { host: Host }) {
               const val = e.target.value;
               if (editingRef.current) setEditing({ ...editingRef.current, value: val });
               else if (targetId && !readOnly && val) setEditing({ id: targetId, value: val, selectAll: false });
+              const end=e.target.selectionStart,match=/(?:\[\[|【【)([^\]\n]*)$/.exec(val.slice(0,end));
+              const items=match?host.listLinkTargets?.(match[1])??[]:[];
+              setLinkChoices(match&&items.length?{start:match.index,end,items:items.slice(0,10),index:0}:null);
             }}
             onKeyDown={(e) => {
               if (!editingRef.current) return;
               e.stopPropagation();
               if (e.nativeEvent.isComposing || composing.current) return;
+              if(linkChoices){
+                if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setLinkChoices({...linkChoices,index:(linkChoices.index+(e.key==='ArrowDown'?1:-1)+linkChoices.items.length)%linkChoices.items.length});return;}
+                if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();insertLinkChoice(linkChoices.items[linkChoices.index]);return;}
+                if(e.key==='Escape'){e.preventDefault();setLinkChoices(null);return;}
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 commitEdit();
@@ -963,9 +1155,11 @@ export function App({ host }: { host: Host }) {
               }
             }}
             onBlur={() => {
+              setLinkChoices(null);
               if (editingRef.current) commitEdit();
             }}
           />
+          {linkChoices&&editing&&<div role="listbox" aria-label="链接到笔记" style={{position:'absolute',zIndex:110,left:edStyle.left,top:typeof edStyle.top==='number'?edStyle.top+48:80,maxHeight:240,overflow:'auto',minWidth:220,background:scene.palette.background,border:'1px solid #888',borderRadius:8,padding:6}}>{linkChoices.items.map((choice,index)=><button key={choice} role="option" aria-selected={index===linkChoices.index} style={{display:'block',width:'100%',padding:8,background:index===linkChoices.index?'#6484ff33':'transparent',color:scene.palette.text,border:0,textAlign:'left'}} onPointerDown={event=>{event.preventDefault();insertLinkChoice(choice);}}>{choice}</button>)}</div>}
           {view === "map" && (
             <div className="wm-zoom">
               <button title={t("zoomOut")} onClick={() => zoom(1 / 1.2)}>
@@ -979,9 +1173,23 @@ export function App({ host }: { host: Host }) {
               </button>
             </div>
           )}
+          {markerPicker&&<div role="dialog" aria-modal="true" aria-label="标记选择器" style={{position:"absolute",zIndex:100,top:40,left:20,maxHeight:"75%",overflowY:"auto",padding:16,background:scene.palette.background,border:"1px solid #888",borderRadius:8}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>标记<button onClick={()=>setMarkerPicker(false)}>×</button></div>
+            {emojiGroups.map(group=><div key={group.name}><p>{group.name}{group.exclusive?"（同组互斥）":""}</p><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{group.emojis.map(emoji=><button key={emoji} aria-label={emoji} aria-pressed={selectedTopics().every(id=>hasEmojiMarker(getTopic(doc,id)!,emoji,emojiGroups))} disabled={readOnly} onClick={()=>actions.toggleEmoji(emoji)} style={{fontSize:22}}>{emoji}</button>)}</div></div>)}
+          </div>}
+          {featureEdit && <div role="dialog" aria-modal="true" aria-label={featureEdit.kind==="callout"?"编辑标注":"节点宽度"} style={{position:"absolute",zIndex:100,left:"50%",top:"20%",transform:"translateX(-50%)",padding:18,background:scene.palette.background,border:"1px solid #888",borderRadius:10,minWidth:280}}>
+            <form onSubmit={e=>{e.preventDefault();const f=featureEdit;if(f.kind==="width"&&f.value.trim()&&(!Number.isFinite(Number(f.value))||Number(f.value)<60||Number(f.value)>1200)){notify("宽度范围为 60–1200 像素，留空恢复自动宽度");return;}if(f.kind==="calloutColor"&&f.value.trim()&&!/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$|^[a-z]+$/i.test(f.value.trim())){notify("请输入颜色名称或十六进制颜色");return;}
+              const patch=f.kind==="callout"?{callout:f.value.trim()||undefined}:f.kind==="calloutColor"?{calloutColor:f.value.trim()||undefined}:{width:f.value.trim()?Number(f.value):undefined};actions.apply(d=>getTopic(d,f.id)?ops.updateTopic(d,f.id,patch):ops.updateRange(d,f.id,patch));setFeatureEdit(null);}}>
+              <label>{featureEdit.kind==="callout"?"标注（留空删除）":featureEdit.kind==="calloutColor"?"标注颜色（名称 / #hex，留空恢复）":"宽度 60–1200 px（留空自动）"}
+              <textarea autoFocus aria-label="内容" value={featureEdit.value} onChange={e=>setFeatureEdit({...featureEdit,value:e.target.value})} onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation();setFeatureEdit(null);}}} style={{display:"block",width:"100%",margin:"10px 0"}} />
+              </label><button type="submit">保存</button> <button type="button" onClick={()=>setFeatureEdit(null)}>取消</button>
+            </form>
+          </div>}
           {toast && <div className="wm-toast">{toast}</div>}
         </div>
-        {panel && <FormatPanel actions={actions} scene={scene} focus={panelFocus} onClose={() => setPanel(false)} />}
+        {panel && !studyMode && <FormatPanel actions={actions} scene={scene} focus={panelFocus} onClose={() => setPanel(false)} />}
+      </div>
+      </div>
       </div>
     </div>
   );

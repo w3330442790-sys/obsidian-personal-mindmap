@@ -1,15 +1,11 @@
 {
-  "name": "weilanx-mind-map",
-  "displayName": "%displayName%",
-  "description": "%description%",
-  "version": "0.2.0",
+  "name": "personal-mindmap",
+  "displayName": "融合 Mindmap",
+  "description": "个人 Obsidian 融合思维导图，基于 Weilanx 和 gogoga MIT 源码",
+  "version": "0.1.0",
   "publisher": "weilanx",
   "icon": "media/logo.png",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Azure12355/weilanx-mind-map.git"
-  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -276,23 +272,30 @@
     "build:ext": "esbuild src/vscode/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "build:web": "vite build",
     "build:cli": "esbuild src/cli/wm.ts --bundle --outfile=skills/weilanx-mind-map/scripts/wm.mjs --format=esm --platform=node --target=node18 --banner:js=\"#!/usr/bin/env node\"",
-    "build": "npm run build:web && npm run build:ext && npm run build:cli",
+    "build": "npm run build:obsidian && npm run build:cli",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p webview/tsconfig.json && tsc --noEmit -p tsconfig.obsidian.json",
     "test": "npm run build:cli && node --test --import tsx test/*.test.ts",
     "package": "npm run build && npx --yes @vscode/vsce package --no-dependencies -o weilanx-mind-map.vsix",
     "build:obsidian": "node esbuild.obsidian.mjs",
     "dev:obsidian": "node esbuild.obsidian.mjs --watch",
-    "release": "npm run package && npm run build:obsidian"
+    "release": "npm run package:local",
+    "build:vscode": "npm run build:web && npm run build:ext && npm run build:cli",
+    "test:upstream": "cd vendor/gogoga && node scripts/run-tests.mjs",
+    "test:ui": "node scripts/ui-smoke.cjs",
+    "package:local": "npm run build && node scripts/package.mjs"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/vscode": "^1.90.0",
     "@vitejs/plugin-react": "^4.3.4",
     "esbuild": "^0.24.0",
+    "markdown-it": "^14.1.0",
     "obsidian": "^1.13.1",
+    "playwright": "^1.58.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^6.0.0"
@@ -301,9 +304,5 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "roughjs": "^4.6.6"
-  },
-  "homepage": "https://azure12355.github.io/weilanx-mind-map/",
-  "bugs": {
-    "url": "https://github.com/Azure12355/weilanx-mind-map/issues"
   }
 }

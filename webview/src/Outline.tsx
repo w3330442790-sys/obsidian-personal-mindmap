@@ -5,6 +5,9 @@ import { indexDoc } from "../../src/core/query";
 import type { MindDoc, Topic } from "../../src/core/types";
 import type { Actions } from "./App";
 import { t } from "./i18n";
+import {isRichText} from './rich';
+import {fillRichElement} from './RichTopic';
+import type {Host} from './host';
 
 interface Row {
   topic: Topic;
@@ -22,11 +25,12 @@ function flatten(doc: MindDoc): Row[] {
   return rows;
 }
 
-export function Outline({ actions: a }: { actions: Actions }) {
+export function Outline({ actions: a,docked,wrap,host }: { actions: Actions;docked?:boolean;wrap?:boolean;host?:Host }) {
   const rows = flatten(a.doc);
   const refs = useRef(new Map<string, HTMLTextAreaElement>());
   const [focusId, setFocusId] = useState<string | null>(a.selection[0] ?? a.doc.root.id);
   const pendingFocus = useRef<{ id: string; caret: "end" | "all" } | null>(null);
+  useEffect(()=>{const id=a.selection[0];if(id){setFocusId(id);refs.current.get(id)?.scrollIntoView({block:'nearest'});}},[a.selection[0]]);
 
   useEffect(() => {
     const p = pendingFocus.current;
@@ -46,10 +50,12 @@ export function Outline({ actions: a }: { actions: Actions }) {
   };
 
   return (
-    <div className="wm-outline">
-      <div className="wm-outline-inner">
+    <div className="wm-outline" style={docked?{padding:0,flex:1,minHeight:0,overflow:"auto"}:undefined}>
+      <div className="wm-outline-inner" style={docked?{maxWidth:"none",padding:0}:undefined}>
         {rows.map(({ topic, depth }, i) => (
           <OutlineRow
+            host={host}
+            wrap={wrap}
             key={topic.id}
             topic={topic}
             depth={depth}
@@ -61,9 +67,10 @@ export function Outline({ actions: a }: { actions: Actions }) {
               setFocusId(topic.id);
               a.select([topic.id]);
             }}
-            onToggle={() => a.apply((d) => ops.toggleCollapsed(d, topic.id))}
+            onToggle={() => a.readOnly?a.feature('fold',topic.id):a.apply((d) => ops.toggleCollapsed(d, topic.id))}
             onCommit={(text) => a.apply((d) => ops.setText(d, topic.id, text))}
             onKey={(e, draft) => {
+              if(a.readOnly){if(e.key==="Enter"||e.key==="Tab")e.preventDefault();return;}
               const d = a.doc;
               const commitText = (doc: MindDoc) => (draft !== topic.text ? ops.setText(doc, topic.id, draft) : doc);
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -108,7 +115,9 @@ export function Outline({ actions: a }: { actions: Actions }) {
 }
 
 function OutlineRow({
+  host,
   topic,
+  wrap,
   depth,
   isRoot,
   active,
@@ -119,7 +128,9 @@ function OutlineRow({
   onCommit,
   onKey,
 }: {
+  host?:Host;
   topic: Topic;
+  wrap?:boolean;
   depth: number;
   isRoot: boolean;
   active: boolean;
@@ -131,6 +142,9 @@ function OutlineRow({
   onKey: (e: React.KeyboardEvent<HTMLTextAreaElement>, draft: string) => void;
 }) {
   const [draft, setDraft] = useState(topic.text);
+  const preview=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement|null>(null);
+  const rich=isRichText(topic.text)&&!active;
+  useEffect(()=>{if(preview.current)fillRichElement(preview.current,topic.text,{renderMath:host?.renderMath,resolveImage:host?.resolveResource});},[topic.text,rich,host]);
   useEffect(() => setDraft(topic.text), [topic.text]);
   const hasKids = !!topic.children?.length;
   return (
@@ -139,9 +153,10 @@ function OutlineRow({
         <span />
       </button>
       <textarea
-        ref={setRef}
+        ref={element=>{input.current=element;setRef(element);}}
         className="wm-otext"
         rows={1}
+        style={rich?{display:'none'}:wrap===false?{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:undefined}
         value={draft}
         readOnly={readOnly}
         placeholder={t("emptyText")}
@@ -150,6 +165,7 @@ function OutlineRow({
         onBlur={() => draft !== topic.text && onCommit(draft)}
         onKeyDown={(e) => onKey(e, draft)}
       />
+      {rich&&<div ref={preview} role="button" tabIndex={0} style={{flex:1,minWidth:0,padding:'5px 4px',whiteSpace:wrap===false?'nowrap':'normal',overflow:'hidden',textOverflow:'ellipsis',cursor:'text'}} onClick={()=>{onFocus();requestAnimationFrame(()=>input.current?.focus());}} onKeyDown={event=>{if(event.key==='Enter'){onFocus();requestAnimationFrame(()=>input.current?.focus());}}}/>}
     </div>
   );
 }

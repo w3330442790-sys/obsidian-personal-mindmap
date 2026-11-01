@@ -38,6 +38,7 @@ interface Sub {
 
 interface Ctx {
   sizes: Map<string, NodeSize>;
+  spacing: typeof SPACING;
 }
 
 const FALLBACK: NodeSize = { w: 80, h: 30 };
@@ -102,11 +103,11 @@ function anchorY(sz: NodeSize): number {
 function leaf(t: Topic, ctx: Ctx, depth: number, orient: Orient, dir: Dir): Sub {
   const sz = size(ctx, t.id);
   const node: NodeBox = { id: t.id, kind: "topic", depth, x: 0, y: 0, w: sz.w, h: sz.h, orient, dir, outX: 0, outY: 0 };
-  setOut(node, sz, orient, dir);
+  setOut(node, sz, orient, dir,ctx);
   return { nodes: [node], edges: [], summaries: [], boundaries: [], x0: 0, y0: 0, x1: sz.w, y1: sz.h };
 }
 
-function setOut(n: NodeBox, sz: NodeSize, orient: Orient, dir: Dir) {
+function setOut(n: NodeBox, sz: NodeSize, orient: Orient, dir: Dir, ctx:Ctx) {
   if (orient === "h") {
     n.outX = n.x + (dir === 1 ? sz.w : 0);
     n.outY = n.y + anchorY(sz);
@@ -114,7 +115,7 @@ function setOut(n: NodeBox, sz: NodeSize, orient: Orient, dir: Dir) {
     n.outX = n.x + sz.w / 2;
     n.outY = n.y + sz.h;
   } else {
-    const inset = Math.min(SPACING.treeIndent / 2, sz.w / 2);
+    const inset = Math.min(ctx.spacing.treeIndent / 2, sz.w / 2);
     n.outX = n.x + (dir === 1 ? inset : sz.w - inset);
     n.outY = n.y + sz.h;
   }
@@ -133,7 +134,7 @@ function layoutTopic(t: Topic, ctx: Ctx, depth: number, inherited: Structure, di
   const children = visibleChildren(t);
   if (!children.length) return sub;
   const subs = children.map((c) => layoutTopic(c, ctx, depth + 1, st, dir));
-  const extra = rangeGaps(t, children);
+  const extra = rangeGaps(t, children,ctx);
   if (orient === "h") stackHorizontal(t, ctx, sub, subs, children, extra, depth, dir);
   else if (orient === "v") stackOrg(t, ctx, sub, subs, children, extra);
   else stackTree(t, ctx, sub, subs, children, extra, dir);
@@ -142,13 +143,13 @@ function layoutTopic(t: Topic, ctx: Ctx, depth: number, inherited: Structure, di
 }
 
 /** 外框会向外扩出内边距,相邻子树之间要多留出这段距离 */
-function rangeGaps(t: Topic, children: Topic[]): number[] {
+function rangeGaps(t: Topic, children: Topic[],ctx:Ctx): number[] {
   const extra = new Array(children.length).fill(0);
   for (const b of t.boundaries ?? []) {
     const [a, z] = rangeIdx(children, b);
     if (a < 0) continue;
-    extra[a] += SPACING.boundaryPad + (b.text ? SPACING.boundaryLabel : 0);
-    if (z + 1 < children.length) extra[z + 1] += SPACING.boundaryPad;
+    extra[a] += ctx.spacing.boundaryPad + (b.text ? ctx.spacing.boundaryLabel : 0);
+    if (z + 1 < children.length) extra[z + 1] += ctx.spacing.boundaryPad;
   }
   return extra;
 }
@@ -164,8 +165,8 @@ function rangeIdx(children: Topic[], r: Range): [number, number] {
 function stackHorizontal(t: Topic, ctx: Ctx, sub: Sub, subs: Sub[], children: Topic[], extra: number[], depth: number, dir: Dir, fromRoot = false) {
   const psz = size(ctx, t.id);
   const parent = sub.nodes[0];
-  const gapX = depth === 0 ? SPACING.rootGapX : SPACING.gapX;
-  const gapY = depth === 0 ? SPACING.rootGapY : SPACING.gapY;
+  const gapX = depth === 0 ? ctx.spacing.rootGapX : ctx.spacing.gapX;
+  const gapY = depth === 0 ? ctx.spacing.rootGapY : ctx.spacing.gapY;
   let total = 0;
   subs.forEach((s, i) => (total += s.y1 - s.y0 + (i ? gapY : 0) + extra[i]));
   const ay = fromRoot ? psz.h / 2 : anchorY(psz);
@@ -193,15 +194,15 @@ function stackHorizontal(t: Topic, ctx: Ctx, sub: Sub, subs: Sub[], children: To
 }
 
 /** 组织结构图:子树在父节点下方横向排开,整体与父节点水平居中 */
-function stackOrg(t: Topic, ctx: Ctx, sub: Sub, subs: Sub[], children: Topic[], extra: number[]) {
+function stackOrg(t: Topic, ctx: Ctx, sub: Sub, subs: Sub[], _children: Topic[], extra: number[]) {
   const psz = size(ctx, t.id);
   const parent = sub.nodes[0];
   let total = 0;
-  subs.forEach((s, i) => (total += s.x1 - s.x0 + (i ? SPACING.orgGapX : 0) + extra[i]));
+  subs.forEach((s, i) => (total += s.x1 - s.x0 + (i ? ctx.spacing.orgGapX : 0) + extra[i]));
   let cursor = psz.w / 2 - total / 2;
   subs.forEach((s, i) => {
-    cursor += extra[i] + (i ? SPACING.orgGapX : 0);
-    translate(s, cursor - s.x0, psz.h + SPACING.orgGapY);
+    cursor += extra[i] + (i ? ctx.spacing.orgGapX : 0);
+    translate(s, cursor - s.x0, psz.h + ctx.spacing.orgGapY);
     cursor += s.x1 - s.x0;
     const child = s.nodes[0];
     sub.edges.push({ from: t.id, to: child.id, x1: parent.outX, y1: parent.outY, x2: child.x + child.w / 2, y2: child.y, orient: "v", fromRoot: false });
@@ -214,11 +215,11 @@ function stackOrg(t: Topic, ctx: Ctx, sub: Sub, subs: Sub[], children: Topic[], 
 function stackTree(t: Topic, ctx: Ctx, sub: Sub, subs: Sub[], children: Topic[], extra: number[], dir: Dir) {
   const psz = size(ctx, t.id);
   const parent = sub.nodes[0];
-  let cursor = psz.h + SPACING.treeGapY;
+  let cursor = psz.h + ctx.spacing.treeGapY;
   subs.forEach((s, i) => {
-    cursor += extra[i] + (i ? SPACING.treeGapY : 0);
+    cursor += extra[i] + (i ? ctx.spacing.treeGapY : 0);
     const csz = size(ctx, children[i].id);
-    const cx = dir === 1 ? SPACING.treeIndent : psz.w - SPACING.treeIndent - csz.w;
+    const cx = dir === 1 ? ctx.spacing.treeIndent : psz.w - ctx.spacing.treeIndent - csz.w;
     translate(s, cx, cursor - s.y0);
     cursor += s.y1 - s.y0;
     const child = s.nodes[0];
@@ -254,8 +255,8 @@ function addRanges(t: Topic, ctx: Ctx, sub: Sub, children: Topic[], subs: Sub[],
     if (filter && !filter(rangeIdx(children, b)[0])) continue;
     const box = span(b);
     if (!box) continue;
-    const p = SPACING.boundaryPad;
-    const top = p + (b.text ? SPACING.boundaryLabel : 0);
+    const p = ctx.spacing.boundaryPad;
+    const top = p + (b.text ? ctx.spacing.boundaryLabel : 0);
     const g: BoundaryGeo = { id: b.id, ownerId: t.id, x: box.x0 - p, y: box.y0 - top, w: box.x1 - box.x0 + 2 * p, h: box.y1 - box.y0 + top + p };
     sub.boundaries.push(g);
     grow(sub, { x0: g.x, y0: g.y, x1: g.x + g.w, y1: g.y + g.h });
@@ -277,7 +278,7 @@ function addRanges(t: Topic, ctx: Ctx, sub: Sub, children: Topic[], subs: Sub[],
     // 括号要把同一范围上的外框也包进去
     for (const g of sub.boundaries) {
       if (g.ownerId !== t.id) continue;
-      if (g.x >= box.x0 - SPACING.boundaryPad - 1 && g.x + g.w <= box.x1 + SPACING.boundaryPad + 1 && g.y + g.h > box.y0 && g.y < box.y1) {
+      if (g.x >= box.x0 - ctx.spacing.boundaryPad - 1 && g.x + g.w <= box.x1 + ctx.spacing.boundaryPad + 1 && g.y + g.h > box.y0 && g.y < box.y1) {
         box.x0 = Math.min(box.x0, g.x);
         box.x1 = Math.max(box.x1, g.x + g.w);
         box.y0 = Math.min(box.y0, g.y);
@@ -285,8 +286,8 @@ function addRanges(t: Topic, ctx: Ctx, sub: Sub, children: Topic[], subs: Sub[],
       }
     }
     const sz = size(ctx, s.id);
-    const B = SPACING.bracket;
-    const G = SPACING.bracketGap;
+    const B = ctx.spacing.bracket;
+    const G = ctx.spacing.bracketGap;
     let geo: SummaryGeo;
     let nx: number;
     let ny: number;
@@ -317,8 +318,9 @@ function layoutMapRoot(root: Topic, ctx: Ctx): Sub {
   const children = visibleChildren(root);
   if (!children.length) return sub;
   const nRight = Math.ceil(children.length / 2);
-  const rightIdx = children.map((_, i) => i).slice(0, nRight);
-  const leftIdx = children.map((_, i) => i).slice(nRight).reverse();
+  const rightIdx = children.flatMap((child,i)=>child.side==='right'||child.side!=='left'&&i<nRight?[i]:[]);
+  const rightSet = new Set(rightIdx);
+  const leftIdx = children.map((_,i)=>i).filter(i=>!rightSet.has(i)).reverse();
   const allSubs: Sub[] = new Array(children.length);
   for (const [idxs, dir] of [
     [rightIdx, 1],
@@ -328,9 +330,8 @@ function layoutMapRoot(root: Topic, ctx: Ctx): Sub {
     const subs = idxs.map((i) => layoutTopic(children[i], ctx, 1, "logic", dir));
     idxs.forEach((i, k) => (allSubs[i] = subs[k]));
     const side = idxs.map((i) => children[i]);
-    stackHorizontal(root, ctx, sub, subs, side, rangeGaps(root, side), 0, dir, true);
+    stackHorizontal(root, ctx, sub, subs, side, rangeGaps(root, side,ctx), 0, dir, true);
   }
-  const rightSet = new Set(rightIdx);
   addRanges(root, ctx, sub, children, allSubs, 0, "right", (i) => rightSet.has(i));
   addRanges(root, ctx, sub, children, allSubs, 0, "left", (i) => !rightSet.has(i));
   return sub;
@@ -344,8 +345,8 @@ export function rootStructure(doc: MindDoc): Structure {
 /**
  * 排版整张图。坐标系以中心主题的中心为原点;自由主题的 position 是它左上角相对原点的坐标。
  */
-export function layout(doc: MindDoc, sizes: Map<string, NodeSize>): LayoutResult {
-  const ctx: Ctx = { sizes };
+export function layout(doc: MindDoc, sizes: Map<string, NodeSize>, spacing:Partial<typeof SPACING> = {}): LayoutResult {
+  const ctx: Ctx = { sizes, spacing:{...SPACING,...spacing} };
   const st = rootStructure(doc);
   const main = st === "map" ? layoutMapRoot(doc.root, ctx) : layoutTopic(doc.root, ctx, 0, st, 1);
   const rsz = size(ctx, doc.root.id);
@@ -353,7 +354,7 @@ export function layout(doc: MindDoc, sizes: Map<string, NodeSize>): LayoutResult
   const all: Sub = { nodes: [], edges: [], summaries: [], boundaries: [], x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
   merge(all, main);
   for (const f of doc.floating ?? []) {
-    const fs = layoutTopic(f, ctx, 0, "logic", 1);
+    const fs = layoutTopic(f, ctx, 0, "logic", (f.position?.x??0)<0?-1:1);
     fs.nodes[0].floatingRoot = true;
     translate(fs, f.position?.x ?? 0, f.position?.y ?? 0);
     merge(all, fs);
@@ -362,4 +363,11 @@ export function layout(doc: MindDoc, sizes: Map<string, NodeSize>): LayoutResult
   for (const n of all.nodes) nodes.set(n.id, n);
   const bounds: Rect = { x: all.x0, y: all.y0, w: all.x1 - all.x0, h: all.y1 - all.y0 };
   return { nodes, edges: all.edges, summaries: all.summaries, boundaries: all.boundaries, bounds };
+}
+
+/** Align actual node boxes by their theme tier; manual widths remain authoritative. */
+export function alignTierSizes<T extends NodeSize>(sizes:Map<string,T>,tiers:ReadonlyMap<string,number>,aligned:readonly boolean[],excluded:ReadonlySet<string>=new Set()):Map<string,T>{
+  const widths=new Map<number,number>();
+  for(const [id,size] of sizes){const tier=tiers.get(id);if(tier===undefined||!aligned[tier]||excluded.has(id))continue;widths.set(tier,Math.max(widths.get(tier)??0,size.w));}
+  const result=new Map(sizes);for(const [id,size] of sizes){const tier=tiers.get(id);if(tier!==undefined&&aligned[tier]&&!excluded.has(id))result.set(id,{...size,w:widths.get(tier)??size.w});}return result;
 }
