@@ -87,6 +87,7 @@ export interface Relationship {
 }
 
 export interface MindDoc {
+  nodeShape?: Shape;
   $schema?: string;
   version: number;
   theme?: string;

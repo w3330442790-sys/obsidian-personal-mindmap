@@ -33,6 +33,32 @@ async function check(name,fn){await fn();results.push(name);console.log('PASS '+
  await page.goto(`http://127.0.0.1:${server.address().port}/`);
  await page.locator('[data-id="root"]').first().waitFor();
  await check('loads original primary canvas and rich nodes',async()=>{const count=node=>1+(node.children??[]).reduce((sum,c)=>sum+count(c),0);assert.equal(await page.locator('.wm-topic[data-kind="topic"]').count(),count(fixture.root));assert.ok(await page.locator('strong').count());assert.equal(await page.locator('.wm-rich-topic img').count(),1);});
+ await check('Weilanx toolbar preserves actions and exposes theme style menu',async()=>{
+   const tb=page.locator('.wm-toolbar');
+   for(const title of ['主题 (Enter)','子主题 (Tab)','联系线','概括','外框','结构','主题风格','导出','大纲','格式']) assert.equal(await tb.locator(`button[title="${title}"]`).count(),1);
+   assert.ok((await tb.boundingBox()).y<80);
+   const before=await page.evaluate(()=>window.__testDoc.theme);
+   await tb.getByRole('button',{name:'主题风格',exact:true}).click();
+   const cards=tb.locator('.wm-theme-grid button');assert.ok(await cards.count()>5);
+   await cards.nth(1).click();assert.notEqual(await page.evaluate(()=>window.__testDoc.theme),before);
+   await command(page,'undo');
+ });
+ await check('whole-map shape panel updates all topics in one undo step',async()=>{
+   await page.evaluate(()=>window.postMessage({type:'select',ids:['root']},'*'));
+   if(!await page.getByLabel('形状应用范围').count())await page.locator('.wm-toolbar button[title="格式"]').click();
+   await page.getByLabel('形状应用范围').selectOption('all');
+   const before=await page.evaluate(()=>JSON.stringify(window.__testDoc));
+   await page.getByRole('button',{name:'整张导图: 椭圆',exact:true}).click();
+   assert.equal(await page.evaluate(()=>window.__testDoc.nodeShape),'ellipse');
+   assert.ok(await page.evaluate(()=>{const visit=n=>n.style?.shape==='ellipse'&&(n.children??[]).every(visit);return visit(window.__testDoc.root);}));
+   await command(page,'undo');assert.equal(await page.evaluate(()=>JSON.stringify(window.__testDoc)),before);
+   await command(page,'redo');assert.equal(await page.evaluate(()=>window.__testDoc.nodeShape),'ellipse');
+   await page.getByRole('button',{name:'恢复主题默认形状',exact:true}).click();assert.equal(await page.evaluate(()=>window.__testDoc.nodeShape),undefined);
+   await command(page,'undo');await command(page,'undo');
+   await page.getByRole('button',{name:'画布',exact:true}).click();
+   await page.getByRole('button',{name:'整张导图: 胶囊',exact:true}).click();assert.equal(await page.evaluate(()=>window.__testDoc.nodeShape),'capsule');
+   await command(page,'undo');
+ });
  await check('primary editor adds child and supports undo/redo',async()=>{
    await page.evaluate(()=>window.postMessage({type:'select',ids:['edit']},'*'));await command(page,'addChild');
    await page.keyboard.type('新增节点');await page.keyboard.press('Enter');

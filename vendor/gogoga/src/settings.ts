@@ -50,6 +50,7 @@ export interface MindMapSettings {
   listIcon: string;
   /** 工具栏位置：上下为水平条，左右为垂直条 */
   toolbarPosition: ToolbarPosition;
+  primaryToolbarPosition?: ToolbarPosition;
   /** 滚轮行为：pan 平移（Cmd/Ctrl+滚轮缩放），zoom 直接缩放（Shift+滚轮平移） */
   wheelAction: "pan" | "zoom";
   /** 左键拖空白处：pan 平移（Shift+拖框选），select 框选（右键或中键拖平移，XMind 的习惯） */
@@ -405,6 +406,13 @@ export class MindMapSettingTab extends PluginSettingTab {
           this.plugin.applyDisplayScale();
         }),
       );
+
+    new Setting(containerEl)
+      .setName("主编辑器工具栏位置 / Primary toolbar position")
+      .setDesc("完整导图的 Weilanx 工具栏默认显示在顶部。")
+      .addDropdown(d=>d.addOptions(Object.fromEntries(TOOLBAR_POSITIONS.map(p=>[p.id,p.label])))
+        .setValue(this.plugin.settings.primaryToolbarPosition??"top")
+        .onChange(async v=>{this.plugin.settings.primaryToolbarPosition=v as ToolbarPosition;await this.plugin.saveSettings();}));
 
     new Setting(containerEl)
       .setName(t("settings.toolbar.name"))

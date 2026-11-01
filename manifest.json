@@ -1,7 +1,7 @@
 {
   "id": "personal-mindmap",
   "name": "融合 Mindmap",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.8.7",
   "description": "个人融合思维导图：Weilanx 完整格式画布与 Markdown、XMind、嵌入及复习功能。",
   "author": "Personal fork; upstream Azure12355 and JackWei",

@@ -18,7 +18,7 @@
 
 ### 手动安装
 
-1. 解压 `personal-mindmap-0.1.0.zip`，得到 `personal-mindmap` 文件夹。
+1. 解压 `personal-mindmap-0.1.1.zip`，得到 `personal-mindmap` 文件夹。
 2. 将文件夹放入你的笔记库 `.obsidian/plugins/` 中，最终应有 `.obsidian/plugins/personal-mindmap/main.js`、`manifest.json`、`styles.css`。
 3. 重启 Obsidian，或重新加载第三方插件列表，在「设置 → 第三方插件」启用 **融合 Mindmap**。
 4. 若已安装两个原版插件，先停用它们，避免争抢 `.wmind`、`.xmind` 文件和 `mindmap` 代码块的处理器。原插件目录和数据无需删除。
@@ -115,3 +115,9 @@ npm run package:local
 ```
 
 `test:ui` 使用隔离浏览器和内存样例，不读取真实库。默认使用 Windows Chrome，可通过 `BROWSER_PATH` 指定其他 Chromium。产物目录为 `dist/personal-mindmap/`，ZIP 在 `artifacts/`。
+
+### 整图统一形状与顶栏
+
+在右侧「样式 → 形状」将应用范围切换为「整张导图」，即可统一六种节点形状。未选中节点时，也可在「画布 → 整图统一形状」操作。包含折叠、隐藏和自由主题，后续新建节点继承设置；可撤销重做或恢复主题默认形状。颜色、文字和其他样式保留，单个节点仍可另设形状。
+
+完整导图默认在顶部显示 Weilanx 工具栏，保留主题、子主题、联系线、概括、外框、删除、结构、主题风格、导出、大纲和格式面板。新增功能位于「更多」。插件设置中的「主编辑器工具栏位置」可调整位置；嵌入工具栏仍使用原位置设置。

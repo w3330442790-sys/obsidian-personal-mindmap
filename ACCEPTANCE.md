@@ -1,15 +1,15 @@
 # 验证记录
 
-日期：2026-11-01。版本：融合 Mindmap 0.1.0。
+日期：2026-11-01。版本：融合 Mindmap 0.1.1。
 
 ## 已通过
 
-- 根工程自动测试：112 项通过，0 失败。包含原 Weilanx 核心/CLI，以及格式适配、主题、操作、备注草稿、主插件生命周期、宿主保存、XMind 竞态、元数据恢复和异步生命周期回归。
+- 根工程自动测试：116 项通过，0 失败。包含原 Weilanx 核心/CLI，以及格式适配、主题、操作、备注草稿、主插件生命周期、宿主保存、XMind 竞态、元数据恢复和异步生命周期回归。
 - 保留的 gogoga 自动测试：155 项通过，0 失败。
-- 主画布浏览器交互：16 个场景通过，页面脚本错误为 0。覆盖增删编辑/撤销重做、背诵遮挡与选择题、只读折叠、锁定、聚焦、PNG/SVG、图片预览、大纲侧栏、备注卡片、隐藏节点、双链补全、笔记选择、附件粘贴及未提交文本保存。
+- 主画布浏览器交互：18 个场景通过，页面脚本错误为 0。新增整图形状/一次撤销重做与顶栏主题入口验证。覆盖增删编辑/撤销重做、背诵遮挡与选择题、只读折叠、锁定、聚焦、PNG/SVG、图片预览、大纲侧栏、备注卡片、隐藏节点、双链补全、笔记选择、附件粘贴及未提交文本保存。
 - TypeScript 主工程、Webview、Obsidian 适配层类型检查。
 
-原始日志位于源码 `artifacts/unit-results.log`、`vendor/gogoga/upstream-tests.log`、`artifacts/ui-results.json`。浏览器截图为 `artifacts/primary-canvas.png`。这些测试产物不进入源码提交。
+原始日志位于源码 `artifacts/test-0.1.1.log`、`artifacts/upstream-0.1.1.log`、`artifacts/ui-results.json`。浏览器截图为 `artifacts/primary-canvas.png`。这些测试产物不进入源码提交。
 
 ## 具体修复验证
 

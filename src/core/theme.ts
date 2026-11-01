@@ -1,6 +1,6 @@
 // 内置主题,以及「主题默认值 ← 分支色 ← 节点 style 覆盖」合并出的最终样式
 import { cleanStyle, docFillStyle, docLook, docTheme } from "./doc";
-import { DEFAULT_FILL_STYLE, FillStyle, LineStyle, Look, MindDoc, Shape, Style, TextAlign, Topic } from "./types";
+import { DEFAULT_FILL_STYLE, FillStyle, LineStyle, Look, MindDoc, Shape, SHAPES, Style, TextAlign, Topic } from "./types";
 
 export type TopicKind = "root" | "main" | "sub" | "floating" | "summary";
 
@@ -487,7 +487,7 @@ export function resolveAll(doc: MindDoc, dark: boolean): { palette: Palette; sty
   const styles = new Map<string, ResolvedStyle>();
   const rb = p.rainbow;
   const visit = (t: Topic, depth: number, branch: string, kind: TopicKind) => {
-    const st = resolveLevel(p, kind, depth, branch, t.style, !!t.children?.length, look, fillDefault);
+    const st = resolveLevel(p, kind, depth, branch, doc.nodeShape && SHAPES.includes(doc.nodeShape) ? {shape:doc.nodeShape,...t.style} : t.style, !!t.children?.length, look, fillDefault);
     styles.set(t.id, st);
     const children = t.children ?? [];
     children.forEach((c, i) => {

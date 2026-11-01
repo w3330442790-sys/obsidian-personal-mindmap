@@ -122,6 +122,31 @@ export function Toolbar({ position, actions: a, view, setView, panel, togglePane
             </div>
           )}
         </Menu>
+        <Menu icon={<Icon.theme />} label={t("theme")} alignRight>
+          {(close)=><div className="wm-settings" style={{maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
+              <div className="wm-settings-title">{t("look")}</div>
+              <div className="wm-settings-look">
+                <LookSwitch a={a} />
+              </div>
+              <div className="wm-settings-title">{t("theme")}</div>
+              <div className="wm-theme-grid">
+                {THEMES.map((th) => (
+                  <button
+                    key={th.id}
+                    className={"wm-card" + (th.id === theme ? " wm-active" : "")}
+                    disabled={ro}
+                    onClick={() => {
+                      a.apply((d) => setDocProp(d, "theme", th.id));
+                      close();
+                    }}
+                  >
+                    <ThemeSwatch id={th.id} dark={a.dark} look={docLook(a.doc)} />
+                    <span>{langIsZh() ? th.zh : th.en}</span>
+                  </button>
+                ))}
+              </div>
+          </div>}
+        </Menu>
         <Menu icon={<Icon.export />} label={t("export")}>
           {(close) => (
             <div className="wm-menu-list">
@@ -148,27 +173,7 @@ export function Toolbar({ position, actions: a, view, setView, panel, togglePane
               <div className="wm-settings-title">{t("display")}</div>
               <Switch label={t("showBranches")} on={prefs.showBranches} onChange={(on) => setPrefs({ showBranches: on })} />
               <Switch label={t("showRelationships")} on={prefs.showRelationships} onChange={(on) => setPrefs({ showRelationships: on })} />
-              <div className="wm-settings-title">{t("look")}</div>
-              <div className="wm-settings-look">
-                <LookSwitch a={a} />
-              </div>
-              <div className="wm-settings-title">{t("theme")}</div>
-              <div className="wm-theme-grid">
-                {THEMES.map((th) => (
-                  <button
-                    key={th.id}
-                    className={"wm-card" + (th.id === theme ? " wm-active" : "")}
-                    disabled={ro}
-                    onClick={() => {
-                      a.apply((d) => setDocProp(d, "theme", th.id));
-                      close();
-                    }}
-                  >
-                    <ThemeSwatch id={th.id} dark={a.dark} look={docLook(a.doc)} />
-                    <span>{langIsZh() ? th.zh : th.en}</span>
-                  </button>
-                ))}
-              </div>
+
             </div>
           )}
         </Menu>

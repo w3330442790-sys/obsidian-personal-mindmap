@@ -2,7 +2,7 @@
   "name": "personal-mindmap",
   "displayName": "融合 Mindmap",
   "description": "个人 Obsidian 融合思维导图，基于 Weilanx 和 gogoga MIT 源码",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "w3330442790-sys",
   "icon": "media/logo.png",
   "license": "MIT",

@@ -131,7 +131,7 @@ export class WmindView extends TextFileView {
   private mount():void{
     this.unmount();this.contentEl.empty();this.mountedPath=this.file?.path??'';
     const saved=this.file?this.plugin.getViewport(this.file.path):undefined;
-    this.host.editorSettings=this.plugin.settings;
+    this.host.editorSettings={...this.plugin.settings,toolbarPosition:this.plugin.settings.primaryToolbarPosition??"top"};
     this.host.renderPdfCrop=(link,element,onImage)=>this.plugin.canvasHost(()=>this.file?.path??'',this).renderPdfCrop?.(link,element,onImage)??false;
     this.host.initialState={...(saved?{viewport:{x:saved.tx,y:saved.ty,k:saved.k},selection:saved.sel?[saved.sel]:[]}:{}),locked:this.file?this.plugin.isLocked(this.file.path):false,showHidden:this.plugin.showHidden,notesExpanded:this.file?this.plugin.isNotesExpanded(this.file.path):false,calloutsHidden:this.file?this.plugin.isCalloutsHidden(this.file.path):false,noteCards:this.file?this.plugin.getNoteCards(this.file.path):undefined};
     this.root=createRoot(this.contentEl.createDiv({cls:'wm-host'}));

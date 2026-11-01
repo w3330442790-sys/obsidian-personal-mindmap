@@ -1,3 +1,4 @@
+import {setAllTopicShapes} from "../../src/core/shape";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as ops from "../../src/core/ops";
 import { getTopic, countDescendants } from "../../src/core/query";
@@ -284,6 +285,7 @@ function TopicStyle({ a, scene, ids, focus }: { a: Actions; scene: Scene; ids: s
   const own = cleanStyle(first.style);
   const rs: ResolvedStyle | undefined = scene.styles.get(first.id);
   const set = (patch: Style) => a.apply((d) => ops.setStyle(d, ids, patch));
+  const [shapeScope,setShapeScope]=useState("selected");
   const [labelDraft, setLabelDraft] = useState("");
   const isRoot = ids.length === 1 && ids[0] === doc.root.id;
   const branchStructure = first.structure;
@@ -307,13 +309,14 @@ function TopicStyle({ a, scene, ids, focus }: { a: Actions; scene: Scene; ids: s
         </Section>
       )}
       <Section title={t("shape")}>
-        <div className="wm-shapes">
+        <select className="wm-select" aria-label={t("shapeScope")} value={shapeScope} onChange={e=>setShapeScope(e.target.value)}><option value="selected">{t("selectedTopics")}</option><option value="all">{t("wholeMap")}</option></select>
+        {shapeScope === "all" ? <WholeMapShapes a={a}/> : <div className="wm-shapes">
           {SHAPES.map((s) => (
             <button key={s} className={"wm-shape" + (rs?.shape === s ? " wm-active" : "") + (own.shape === s ? " wm-own" : "")} title={t(`shape.${s}`)} onClick={() => set({ shape: own.shape === s ? undefined : s })}>
               <ShapeIcon shape={s} />
             </button>
           ))}
-        </div>
+        </div>}
       </Section>
       <Section title={t("fill")}>
         <Colors value={own.fill as string | undefined} onChange={(v) => set({ fill: v })} allowNone />
@@ -588,6 +591,10 @@ export function LookSwitch({ a }: { a: Actions }) {
   );
 }
 
+function WholeMapShapes({a}:{a:Actions}) {
+  return <><div className="wm-shapes">{SHAPES.map(shape=><button key={shape} className={"wm-shape"+(a.doc.nodeShape===shape?" wm-active":"")} title={t(`shape.${shape}`)} aria-label={`${t("wholeMap")}: ${t(`shape.${shape}`)}`} onClick={()=>a.apply(d=>setAllTopicShapes(d,shape))}><ShapeIcon shape={shape}/></button>)}</div><button className="wm-tb-btn" onClick={()=>a.apply(d=>setAllTopicShapes(d,undefined))}>{t("resetShapes")}</button></>;
+}
+
 function CanvasTab({ a }: { a: Actions }) {
   const doc = a.doc;
   const theme = docTheme(doc);
@@ -596,6 +603,7 @@ function CanvasTab({ a }: { a: Actions }) {
   const total = countDescendants(doc.root) + 1 + (doc.floating ?? []).reduce((n, f) => n + 1 + countDescendants(f), 0);
   return (
     <fieldset disabled={a.readOnly} className="wm-fieldset">
+      <Section title={t("wholeMapShapes")}><WholeMapShapes a={a}/></Section>
       <Section title={t("look")}>
         <LookSwitch a={a} />
       </Section>
