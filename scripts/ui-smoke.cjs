@@ -23,7 +23,7 @@ async function check(name,fn){await fn();results.push(name);console.log('PASS '+
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await chromium.launch({executablePath:process.env.BROWSER_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',headless:true});
  try{
- const page=await browser.newPage({viewport:{width:1450,height:980}});
+ const page=await browser.newPage({viewport:{width:1450,height:980},hasTouch:true});
  page.setDefaultTimeout(8000);
  page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(fixture=>{
@@ -33,6 +33,45 @@ async function check(name,fn){await fn();results.push(name);console.log('PASS '+
  await page.goto(`http://127.0.0.1:${server.address().port}/`);
  await page.locator('[data-id="root"]').first().waitFor();
  await check('loads original primary canvas and rich nodes',async()=>{const count=node=>1+(node.children??[]).reduce((sum,c)=>sum+count(c),0);assert.equal(await page.locator('.wm-topic[data-kind="topic"]').count(),count(fixture.root));assert.ok(await page.locator('strong').count());assert.equal(await page.locator('.wm-rich-topic img').count(),1);});
+ const touchSession=await page.context().newCDPSession(page);
+ async function swipe(x,y,dx,dy=0){
+   await touchSession.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+   for(let i=1;i<=6;i++)await touchSession.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*i/6,y:y+dy*i/6}]});
+   await touchSession.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await page.waitForTimeout(80);
+ }
+ await check('tablet canvas opts out of host sidebar swipes',async()=>{
+   await page.setViewportSize({width:1280,height:800});await command(page,'fit');
+   // Model the host recognizer at document capture: stopping bubbling is too late.
+   await page.evaluate(()=>{window.__sidebarSwipes=0;document.addEventListener('touchstart',event=>{if(!event.target.closest('[data-ignore-swipe]'))window.__sidebarSwipes++;},true);});
+   const box=await page.locator('.wm-canvas').boundingBox();
+   const before=await page.evaluate(()=>window.__testViewState.viewport);
+   await swipe(box.x+box.width/2,box.y+box.height-40,80);
+   assert.equal(await page.evaluate(()=>window.__sidebarSwipes),0);
+   assert.ok((await page.evaluate(()=>window.__testViewState.viewport.x))>before.x+60);
+   await swipe(box.x+box.width/2,box.y+box.height-40,-80);
+ });
+ await check('tablet reading mode pans from topics without editing the document',async()=>{
+   await command(page,'toggleLock');
+   const source=await page.evaluate(()=>JSON.stringify(window.__testDoc));
+   const before=await page.evaluate(()=>window.__testViewState.viewport);
+   const box=await page.locator('.wm-topic[data-id="edit"]').boundingBox();
+   await swipe(box.x+box.width/2,box.y+box.height/2,90,25);
+   const after=await page.evaluate(()=>window.__testViewState.viewport);
+   assert.ok(after.x>before.x+70,'dragging a locked topic should pan the canvas');
+   assert.ok(after.y>before.y+15);
+   assert.equal(await page.evaluate(()=>JSON.stringify(window.__testDoc)),source);
+   assert.equal(await page.evaluate(()=>window.__sidebarSwipes),0);
+   const canvas=await page.locator('.wm-canvas').boundingBox();
+   const x=canvas.x+canvas.width/2,y=canvas.y+canvas.height-80;
+   await touchSession.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{id:1,x:x-40,y},{id:2,x:x+40,y}]});
+   await touchSession.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{id:1,x:x-80,y},{id:2,x:x+80,y}]});
+   await touchSession.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await page.waitForFunction(k=>window.__testViewState.viewport.k>k*1.5,after.k);
+   assert.equal(await page.evaluate(()=>JSON.stringify(window.__testDoc)),source);
+   assert.equal(await page.evaluate(()=>window.__sidebarSwipes),0);
+   await command(page,'toggleLock');await page.setViewportSize({width:1450,height:980});await command(page,'fit');
+ });
  await check('Weilanx toolbar preserves actions and exposes theme style menu',async()=>{
    const tb=page.locator('.wm-toolbar');
    for(const title of ['主题 (Enter)','子主题 (Tab)','联系线','概括','外框','结构','主题风格','导出','大纲','格式']) assert.equal(await tb.locator(`button[title="${title}"]`).count(),1);

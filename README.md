@@ -18,12 +18,16 @@
 
 ### 手动安装
 
-1. 解压 `personal-mindmap-0.1.1.zip`，得到 `personal-mindmap` 文件夹。
+1. 解压 `personal-mindmap-0.1.2.zip`，得到 `personal-mindmap` 文件夹。
 2. 将文件夹放入你的笔记库 `.obsidian/plugins/` 中，最终应有 `.obsidian/plugins/personal-mindmap/main.js`、`manifest.json`、`styles.css`。
 3. 重启 Obsidian，或重新加载第三方插件列表，在「设置 → 第三方插件」启用 **融合 Mindmap**。
 4. 若已安装两个原版插件，先停用它们，避免争抢 `.wmind`、`.xmind` 文件和 `mindmap` 代码块的处理器。原插件目录和数据无需删除。
 
 GitHub Release 同时提供 BRAT 使用的三个独立附件和手动安装 ZIP。发布不会自动修改或启用真实笔记库中的插件。源码开发依赖不需要复制进笔记库。
+
+## 安卓平板阅读
+
+在工具栏开启锁定，或执行「锁定 / 解锁编辑」命令进入只读阅读。单指在空白处或节点上拖动可平移画布，双指可缩放；节点折叠仍然可用，阅读操作不会写入节点内容。画布使用 Obsidian 的 `data-ignore-swipe` 标记，避免左右拖动误开应用侧栏。需要侧栏时，可使用 Obsidian 自身的侧栏按钮。
 
 ## 两种文件怎么选
 

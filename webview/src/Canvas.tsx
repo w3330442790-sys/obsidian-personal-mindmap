@@ -70,7 +70,7 @@ type Drag =
   | {mode:'note';id:string;sx:number;sy:number;w:number;h:number;nextW:number;nextH:number}
   | {mode:'range';id:string;which:'from'|'to';anchor:string|null}
   | {mode:"resize";id:string;sx:number;width:number;current:number}
-  | { mode: "pan"; sx: number; sy: number; vx: number; vy: number; moved: boolean }
+  | { mode: "pan"; sx: number; sy: number; vx: number; vy: number; moved: boolean; clickId?: string }
   | { mode: "marquee"; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { mode: "node"; ids: string[]; sx: number; sy: number; dx: number; dy: number; moved: boolean; drop: DropTarget | null; grab: Point; clickId: string; plain: boolean }
   | { mode: "handle"; relId: string; which: 0 | 1; controls: [Point, Point] };
@@ -276,7 +276,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
       else if(d.mode==='range'){if(!readOnly&&d.anchor)api.resizeRange(d.id,d.which,d.anchor);}
       else if(d.mode==="resize"){if(!readOnly)api.setWidth(d.id,d.current);}
       else if (d.mode === "pan" && !d.moved && !spaceHeld.current.down) {
-        api.select([]);
+        if (!d.clickId) api.select([]);
         api.cancelLinking();
       } else if (d.mode === "node") {
         if (d.moved && d.drop && !readOnly) api.drop(d.ids, d.drop);
@@ -379,6 +379,9 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
         const box = L.nodes.get(id)!;
         const p = toWorld(e.clientX, e.clientY);
         if (readOnly || (ids.length === 1 && ids[0] === doc.root.id)) {
+          if (readOnly && e.pointerType === "touch") {
+            setD({ mode: "pan", sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y, moved: false, clickId: id });
+          }
           api.focusCapture();
           return;
         }
@@ -612,6 +615,8 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
   return (
     <div
       ref={wrapRef}
+      // Obsidian's mobile swipe recognizer checks ancestors before handling sidebar gestures.
+      data-ignore-swipe="true"
       className={"wm-canvas" + (drag?.mode === "pan" ? " wm-panning" : "") + (linkingFrom ? " wm-linking" : "")}
       style={{ background: P.background }}
       onPointerDown={onPointerDown}
