@@ -22,8 +22,8 @@ ASSET="weilanx-mind-map.vsix"
 URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
 EXT_ID="weilanx.weilanx-mind-map"
 
-RELEASE="https://github.com/${REPO}/releases/latest/download"
-OBSIDIAN_ID="weilanx-mind-map"
+RELEASE="https://github.com/w3330442790-sys/obsidian-personal-mindmap/releases/latest/download"
+OBSIDIAN_ID="personal-mindmap"
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
