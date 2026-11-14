@@ -6,6 +6,11 @@
 | --- | --- | --- |
 | Weilanx JSON、未知字段、操作、结构、范围、手绘、对齐 | src/core、webview/src | 原 core/cli 测试完整保留 |
 | Markdown 双向编辑、保留格式、高级格式扩展 | src/fusion/markdown.ts、src/obsidian/view.ts | fusion-format、obsidian-host；包括外部重排、重叠外框、多条平行关联线 |
+| 任意 Markdown 一键切换思维导图，不写 frontmatter、不建镜像文件 | vendor/gogoga/src/main.ts、obsidian-plugin | 插件生命周期替身：每个 Markdown 标签有带文字按钮，点击先保存再以 remember=false 打开 |
+| 大纲选择性标红/橙色/高亮/加粗，右键浮动格式栏 | webview/src/Outline.tsx、src/core/inline-format.ts | inline-format 单元测试、rich 安全 token、浏览器右键与颜色预览 |
+| Markdown 编辑器右键标红、清除颜色 | src/obsidian/main.ts | 命令注册与选区差量替换；类型检查和插件生命周期测试 |
+| 联系线文字双击/右键编辑 | webview/src/Canvas.tsx、App.tsx、FormatPanel.tsx | 浏览器原位编辑并写回 relationships[].text |
+| 概括转分支并继续分点，保留嵌套/跨边界范围 | src/core/ops.ts、webview/src/App.tsx、FormatPanel.tsx | summary-branch、fusion-format 往返、浏览器右键转分支后新增子节点 |
 | Markdown 标题/列表层级与顺序 | src/fusion/markdown.ts | 原生 Markdown 去掉扩展注释后仍保留拖拽后的顺序；同级类型转换回归 |
 | XMind XML/JSON、多工作表、转换 | vendor/gogoga/src/xmind.ts、xmind-view.ts | 上游 xmind、fusion-format、obsidian-xmind 竞态测试 |
 | 代码块、笔记嵌入、分支/块嵌入、Canvas | vendor/gogoga/src/main.ts、embed.ts；wmind-embed.ts | 上游 codeblock；插件注册/清理与陈旧块拒绝写入测试 |

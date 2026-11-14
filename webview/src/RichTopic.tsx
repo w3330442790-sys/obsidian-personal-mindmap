@@ -1,6 +1,6 @@
 import { createContext, useContext, useLayoutEffect, useRef } from "react";
 import type { CSSProperties } from "react";
-import { parseRich, safeImageSource, mediaKind, type RichToken } from "./rich";
+import { parseRich, safeImageSource, safeInlineColor, mediaKind, type RichToken } from "./rich";
 
 export interface RichEnvironmentValue {
   studyMode?: boolean;
@@ -31,7 +31,7 @@ function appendTokens(el:HTMLElement, tokens:RichToken[], env:RichEnvironmentVal
       const math = env.renderMath?.(token.text??"",!!token.display);
       if (math) { el.append(math); continue; }
     }
-    const tag = ({bold:"strong",italic:"em",strike:"s",highlight:"mark",code:"code",link:"a",tag:"a",image:"span",math:"code",embed:"span"} as const)[token.kind];
+    const tag = ({bold:"strong",italic:"em",strike:"s",highlight:"mark",color:"span",code:"code",link:"a",tag:"a",image:"span",math:"code",embed:"span"} as const)[token.kind];
     const child = document.createElement(tag);
     if (token.kind === "link") {
       child.dataset.link = token.target;
@@ -43,6 +43,7 @@ function appendTokens(el:HTMLElement, tokens:RichToken[], env:RichEnvironmentVal
     }
     if(token.kind==='tag'){child.setAttribute('href','#');child.style.cssText='color:inherit;background:#6484ff22;border-radius:4px;padding:1px 3px;cursor:pointer';child.addEventListener('pointerdown',event=>event.stopPropagation());child.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();env.openTag?.(token.target!);});}
     if (token.kind === "highlight") child.style.cssText = "background:#ffe690;color:#242424;border-radius:2px";
+    if (token.kind === "color") child.style.color = safeInlineColor(token.color) ?? "#dc2626";
     if (token.kind === "code" || token.kind === "math") child.style.cssText = "font-family:monospace;background:rgba(128,128,128,.12);border-radius:3px";
     if (token.kind === "image" || token.kind === "embed") {
       const kind=token.kind==="embed"?"embed":mediaKind(token.target!);

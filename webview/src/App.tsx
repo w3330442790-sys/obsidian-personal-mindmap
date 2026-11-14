@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { docLook, parse, serialize, type ParseError } from "../../src/core/doc";
 import * as ops from "../../src/core/ops";
 import { deleteOnly, splitIntoChildren, projectView, setFoldLevel, resizeRange, isAnswer, isQuestion } from "../../src/core/fusion-ops";
@@ -646,6 +646,12 @@ export function App({ host }: { host: Host }) {
     if(c==="addRelationship")return startLinking();
     if(c==="deleteNode")return remove();
     if(c==="summary")return addRange("summaries");
+    if(c==="summaryBranch"){
+      const id=selRef.current[0], d=docRef.current;
+      if(!id||!d||readOnly)return;
+      feature("summaryBranch",id);
+      return;
+    }
     if(c==="boundary")return addRange("boundaries");
     if(c==="linkNote"){
       const id=selRef.current[0],d=docRef.current;if(host.pickNote&&id&&d&&!readOnly){void host.pickNote().then(link=>{const next=docRef.current;if(link&&next&&getTopic(next,id))commit(ops.updateTopic(next,id,{link:`[[${link}]]`}));});}
@@ -893,6 +899,21 @@ export function App({ host }: { host: Host }) {
     if(command==="showAll"){setHidden(new Set());setShowHidden(v=>!v);return;}
     if(command==="outlineDock"){if(!studyMode)setOutlineDock(v=>!v);return;}
     if(command==="markers"){setMarkerPicker(true);return;}
+    if(command==="editText"){if(!readOnly)startEdit(id);return;}
+    if(command==="deleteAny"){if(!readOnly)safe(()=>commit(ops.removeAny(d,[id]),[]));return;}
+    if(command==="summaryBranch"){
+      if(readOnly)return;
+      const found=ops.findRange(d,id);
+      if(!found||found.kind!=="summaries")return;
+      safe(()=>{
+        const result=ops.summaryToBranch(d,id);
+        if(!result)return;
+        commit(result.doc,[result.id]);
+        notify(result.droppedRanges?`已转为分支节点；${result.droppedRanges} 个无法对应的范围已移除`:"已转为分支节点，可继续添加分点");
+        requestAnimationFrame(()=>startEdit(result.id));
+      });
+      return;
+    }
     if(command==="width"&&!readOnly&&!tp){const range=ops.findRange(d,id)?.range;if(range)setFeatureEdit({id,kind:"width",value:typeof range.width==="number"?String(range.width):""});return;}
     if(readOnly||!tp)return;
     if(command==='heading'||command==='list'){const next=convertPrimaryLevelKind(d,id,command);if(next===d)notify('此处无法转换为该层级类型');else commit(next);return;}
@@ -1086,33 +1107,46 @@ export function App({ host }: { host: Host }) {
           )}
           {ctxMenu && view === "map" && (() => {
             const tp = getTopic(doc, ctxMenu.id);
+            const rel = doc.relationships?.find((item) => item.id === ctxMenu.id);
+            const range = ops.findRange(doc, ctxMenu.id);
             const kids = !!tp?.children?.length;
-            return (
-              <ContextMenu
-                x={ctxMenu.x}
-                y={ctxMenu.y}
-                onClose={closeCtxMenu}
-                items={[
-                  { icon: <Icon.map />, label: "聚焦分支", run: () => feature("focus", ctxMenu.id) },
-                  { icon: <Icon.minus />, label: tp?.hidden?"取消隐藏分支":"隐藏分支", disabled: ctxMenu.id===doc.root.id, run: () => feature("hide", ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "添加 / 编辑标注", disabled: readOnly, run: () => feature("callout", ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "查看 / 编辑备注",run:()=>feature('editNote',ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "标记",disabled:readOnly,run:()=>feature("markers",ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "标注颜色",disabled:readOnly||!tp?.callout,run:()=>feature("calloutColor",ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "节点宽度", disabled: readOnly, run: () => feature("width", ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "固定到左侧",disabled:readOnly||indexDoc(doc).get(ctxMenu.id)?.parent?.id!==doc.root.id,run:()=>feature('sideLeft',ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "固定到右侧",disabled:readOnly||indexDoc(doc).get(ctxMenu.id)?.parent?.id!==doc.root.id,run:()=>feature('sideRight',ctxMenu.id) },
-                  { icon: <Icon.subtopic />, label: "按标点拆成子节点", disabled: readOnly, run: () => feature("split", ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "本级转为标题",disabled:readOnly||ctxMenu.id===doc.root.id,run:()=>feature('heading',ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "本级转为列表",disabled:readOnly||ctxMenu.id===doc.root.id,run:()=>feature('list',ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "任务复选框", disabled: readOnly, run: () => feature("task", ctxMenu.id) },
-                  { icon: <Icon.topic />, label: "答案标记 🙈", disabled: readOnly, run: () => feature("answer", ctxMenu.id) },
-                  { icon: <Icon.trash />, label: "仅删除节点，保留子节点", disabled: readOnly || ctxMenu.id===doc.root.id, run: () => feature("deleteOnly", ctxMenu.id) },
-                  { icon: <Icon.expand />, label: t("expandSubtree"), disabled: !kids, run: () => setSubtreeFold(ctxMenu.id, false) },
-                  { icon: <Icon.collapse />, label: t("collapseSubtree"), disabled: !kids, run: () => setSubtreeFold(ctxMenu.id, true) },
-                ]}
-              />
-            );
+            let items: Array<{ icon?: ReactNode; label: string; disabled?: boolean; run: () => void }>;
+            if (rel) {
+              items = [
+                { icon: <Icon.topic />, label: "编辑联系线文字", disabled: readOnly, run: () => feature("editText", ctxMenu.id) },
+                { icon: <Icon.relationship />, label: "联系线样式…", run: () => { setSelection([ctxMenu.id]); setPanel(true); } },
+                { icon: <Icon.trash />, label: "删除联系线", disabled: readOnly, run: () => feature("deleteAny", ctxMenu.id) },
+              ];
+            } else if (range) {
+              const isSummary = range.kind === "summaries";
+              items = [
+                { icon: <Icon.topic />, label: isSummary ? "编辑概括文字" : "编辑外框文字", disabled: readOnly, run: () => feature("editText", ctxMenu.id) },
+                { icon: <Icon.subtopic />, label: "概括转分支（可继续分点）", disabled: readOnly || !isSummary, run: () => feature("summaryBranch", ctxMenu.id) },
+                { icon: <Icon.theme />, label: "样式…", run: () => { setSelection([ctxMenu.id]); setPanel(true); } },
+                { icon: <Icon.trash />, label: isSummary ? "删除概括" : "删除外框", disabled: readOnly, run: () => feature("deleteAny", ctxMenu.id) },
+              ];
+            } else {
+              items = [
+                { icon: <Icon.map />, label: "聚焦分支", run: () => feature("focus", ctxMenu.id) },
+                { icon: <Icon.minus />, label: tp?.hidden ? "取消隐藏分支" : "隐藏分支", disabled: ctxMenu.id === doc.root.id, run: () => feature("hide", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "添加 / 编辑标注", disabled: readOnly, run: () => feature("callout", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "查看 / 编辑备注", run: () => feature("editNote", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "标记", disabled: readOnly, run: () => feature("markers", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "标注颜色", disabled: readOnly || !tp?.callout, run: () => feature("calloutColor", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "节点宽度", disabled: readOnly, run: () => feature("width", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "固定到左侧", disabled: readOnly || indexDoc(doc).get(ctxMenu.id)?.parent?.id !== doc.root.id, run: () => feature("sideLeft", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "固定到右侧", disabled: readOnly || indexDoc(doc).get(ctxMenu.id)?.parent?.id !== doc.root.id, run: () => feature("sideRight", ctxMenu.id) },
+                { icon: <Icon.subtopic />, label: "按标点拆成子节点", disabled: readOnly, run: () => feature("split", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "本级转为标题", disabled: readOnly || ctxMenu.id === doc.root.id, run: () => feature("heading", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "本级转为列表", disabled: readOnly || ctxMenu.id === doc.root.id, run: () => feature("list", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "任务复选框", disabled: readOnly, run: () => feature("task", ctxMenu.id) },
+                { icon: <Icon.topic />, label: "答案标记 🙈", disabled: readOnly, run: () => feature("answer", ctxMenu.id) },
+                { icon: <Icon.trash />, label: "仅删除节点，保留子节点", disabled: readOnly || ctxMenu.id === doc.root.id, run: () => feature("deleteOnly", ctxMenu.id) },
+                { icon: <Icon.expand />, label: t("expandSubtree"), disabled: !kids, run: () => setSubtreeFold(ctxMenu.id, false) },
+                { icon: <Icon.collapse />, label: t("collapseSubtree"), disabled: !kids, run: () => setSubtreeFold(ctxMenu.id, true) },
+              ];
+            }
+            return <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={closeCtxMenu} items={items} />;
           })()}
           <textarea
             ref={captureRef}

@@ -1,9 +1,10 @@
-import { TFile, TFolder, Notice, normalizePath, loadMathJax } from 'obsidian';
+import { TFile, TFolder, Notice, normalizePath, loadMathJax, type Editor } from 'obsidian';
 import GogogaPlugin from '../../vendor/gogoga/src/main';
 import { WmindView, VIEW_TYPE } from './view';
 import { newDoc, serialize } from '../core/doc';
 import { parseMarkdownDoc } from '../fusion/markdown';
 import type { HostCommand } from '../../webview/src/host';
+import { applyInlineFormat, type InlineFormat } from '../core/inline-format';
 import { registerFusionThemes } from '../core/theme';
 import { registerWmindEmbeds } from './wmind-embed';
 import { VIEW_TYPE_MINDMAP } from '../../vendor/gogoga/src/view';
@@ -24,6 +25,13 @@ export default class PersonalMindmapPlugin extends GogogaPlugin {
       if (!checking) void this.convertToWmind(file);
       return true;
     }});
+    this.addCommand({ id: 'mark-red', name: '标红选中文字', editorCallback: editor => this.formatMarkdownSelection(editor, 'red') });
+    this.addCommand({ id: 'clear-marked-color', name: '清除选中文字颜色', editorCallback: editor => this.formatMarkdownSelection(editor, 'clear-color') });
+    this.registerEvent(this.app.workspace.on('editor-menu', (menu, editor) => {
+      if (!editor.somethingSelected()) return;
+      menu.addItem(item => item.setTitle('标红选中文字').setIcon('baseline').onClick(() => this.formatMarkdownSelection(editor, 'red')));
+      menu.addItem(item => item.setTitle('清除文字颜色').setIcon('eraser').onClick(() => this.formatMarkdownSelection(editor, 'clear-color')));
+    }));
     const commands: [string, string, HostCommand][] = [
       ['undo','撤销','undo'],['redo','重做','redo'],['zoom-in','放大','zoomIn'],['zoom-out','缩小','zoomOut'],
       ['fit','适应画布','fit'],['find','查找','find'],['replace','替换','replace'],
@@ -40,6 +48,7 @@ export default class PersonalMindmapPlugin extends GogogaPlugin {
       ['wmind-indent','完整格式 · 降级','indent'],['wmind-outdent','完整格式 · 升级','outdent'],
       ['wmind-expand','完整格式 · 展开全部','expandAll'],['wmind-collapse','完整格式 · 收起全部','collapseAll'],
       ['wmind-boundary','完整格式 · 添加外框','boundary'],['wmind-summary','完整格式 · 添加概括','summary'],
+      ['wmind-summary-branch','完整格式 · 概括转分支（可继续分点）','summaryBranch'],
       ['wmind-link-note','完整格式 · 链接笔记','linkNote'],['wmind-split','完整格式 · 按标点拆分','splitTopic'],
       ...Array.from({length:9},(_,i)=>[`wmind-level-${i+1}`,`完整格式 · 显示到第 ${i+1} 层`,`showLevel:${i+1}`] as [string,string,HostCommand]),
     ];
@@ -69,6 +78,30 @@ export default class PersonalMindmapPlugin extends GogogaPlugin {
     const views=new Set<WmindView>();
     for(const type of includeMarkdown?[VIEW_TYPE,VIEW_TYPE_MINDMAP]:[VIEW_TYPE])for(const leaf of this.app.workspace.getLeavesOfType(type))if(leaf.view instanceof WmindView)views.add(leaf.view);
     await Promise.all([...views].map(view=>view.refreshFromSettings()));
+  }
+  /** Apply the same safe inline color syntax used by the outline toolbar. */
+  private formatMarkdownSelection(editor: Editor, format: InlineFormat): void {
+    if (!editor.somethingSelected()) { new Notice('请先选中文字。'); return; }
+    const original = editor.getValue();
+    const from = editor.posToOffset(editor.getCursor('from'));
+    const to = editor.posToOffset(editor.getCursor('to'));
+    const result = applyInlineFormat(original, from, to, format);
+    if (result.text === original) return;
+    let prefix = 0;
+    while (prefix < original.length && prefix < result.text.length && original[prefix] === result.text[prefix]) prefix++;
+    let suffix = 0;
+    while (
+      suffix < original.length - prefix &&
+      suffix < result.text.length - prefix &&
+      original[original.length - 1 - suffix] === result.text[result.text.length - 1 - suffix]
+    ) suffix++;
+    const replaceEnd = original.length - suffix;
+    editor.replaceRange(
+      result.text.slice(prefix, result.text.length - suffix),
+      editor.offsetToPos(prefix),
+      editor.offsetToPos(replaceEnd),
+    );
+    editor.setSelection(editor.offsetToPos(result.start), editor.offsetToPos(result.end));
   }
   private freePath(dir:string, name:string):string {
     const clean = name.replace(/[\\/:*?"<>|]/g,' ').trim() || '新建思维导图';

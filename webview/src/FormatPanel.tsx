@@ -526,6 +526,11 @@ function RangeStyle({ a, id, summary }: { a: Actions; id: string; summary?: bool
           <Colors value={own.textColor as string | undefined} onChange={(v) => set({ textColor: v })} />
         </Section>
       )}
+      {summary && (
+        <button className="wm-btn wm-btn-block" onClick={() => a.feature("summaryBranch", id)}>
+          <Icon.subtopic /> 概括转分支（可继续分点）
+        </button>
+      )}
       <button className="wm-btn wm-btn-block wm-btn-danger" onClick={() => a.apply((d) => ops.removeRange(d, id), [f.owner.id])}>
         <Icon.trash /> {t("remove")}
       </button>

@@ -32,6 +32,24 @@ test("plain topics preserve SVG path and escaped markup stays literal", () => {
   assert.equal(isRichText("**bold**"), true);
   assert.equal(richPlainText(parseRich(String.raw`\*literal\*`)), "*literal*");
 });
+test("only the exact color span becomes rich text and other HTML stays literal", () => {
+  const nodes = parseRich('前<span style="color:#dc2626">**重点**</span>后');
+  const color = nodes.find(token => token.kind === "color");
+  assert.equal(color?.color, "#dc2626");
+  assert.equal(richPlainText(nodes), "前重点后");
+  assert.equal(color?.children?.[0].kind, "bold");
+  assert.equal(isRichText('<span style="color:#dc2626">重点</span>'), true);
+  assert.doesNotMatch(JSON.stringify(parseRich('<span style="color:red">重点</span>')), /"kind":"color"/);
+  assert.doesNotMatch(JSON.stringify(parseRich('<span onclick="evil()" style="color:#dc2626">重点</span>')), /"kind":"color"/);
+  assert.match(richPlainText(parseRich('<span style="color:red">重点</span>')), /<span style=/);
+});
+test("inline color values are validated before becoming CSS", () => {
+  const { safeInlineColor } = require("../webview/src/rich");
+  assert.equal(safeInlineColor("#dc2626"), "#dc2626");
+  assert.equal(safeInlineColor("red"), null);
+  assert.equal(safeInlineColor("red;position:fixed"), null);
+  assert.equal(safeInlineColor(undefined), null);
+});
 
 // Require through tsx's runtime hook so the root Node tsconfig need not compile JSX.
 const { createElement } = require("react");

@@ -18,7 +18,7 @@
 
 ### 手动安装
 
-1. 解压 `personal-mindmap-0.1.0.zip`，得到 `personal-mindmap` 文件夹。
+1. 解压 `personal-mindmap-0.2.0.zip`，得到 `personal-mindmap` 文件夹。
 2. 将文件夹放入你的笔记库 `.obsidian/plugins/` 中，最终应有 `.obsidian/plugins/personal-mindmap/main.js`、`manifest.json`、`styles.css`。
 3. 重启 Obsidian，或重新加载第三方插件列表，在「设置 → 第三方插件」启用 **融合 Mindmap**。
 4. 若已安装两个原版插件，先停用它们，避免争抢 `.wmind`、`.xmind` 文件和 `mindmap` 代码块的处理器。原插件目录和数据无需删除。
@@ -34,6 +34,14 @@ GitHub Release 同时提供 BRAT 使用的三个独立附件和手动安装 ZIP�
 | `.xmind` | 只读查看并切换工作表；可将当前工作表转换为 Markdown 或 `.wmind` |
 
 命令面板搜索「融合 Mindmap」可新建 Markdown 脑图，或选择「新建完整格式脑图 (.wmind)」。给 Markdown 笔记的 YAML 加 `mindmap: true`，以后默认以脑图打开。视图右上角可切回 Markdown 或分屏对照。
+
+## 0.2.0：像幕布一样直接编辑笔记
+
+- 任意 Markdown 标签页右上角都有「思维导图」按钮。点一下即切换当前标签页，**不写 frontmatter、不创建第二个文件、不生成镜像笔记**；切换前会先保存编辑器，脑图里改完再从右上角「Markdown」返回。
+- 脑图内的大纲面板可直接编辑；大纲、画布和 Markdown 始终是同一份文档。文字输入、层级调整、撤销重做和保存冲突保护继续沿用原流程。
+- 在大纲里选中文字后右键，会打开文字格式工具栏：标红、橙色、高亮、加粗、清除颜色。颜色使用可读的内联 HTML（例如 `<span style="color:#dc2626">重点</span>`），在 Obsidian 阅读视图、画布和导出中都保留。
+- 联系线文字可双击编辑，也可右键选择“编辑联系线文字”；右侧样式面板仍可改线色和线型。
+- 选中连续同级节点后点「概括」，再右键概括选「概括转分支（可继续分点）」：概括变成真正的父节点，原来的节点成为子节点，接着可用“子主题”继续分点。
 
 ```markdown
 ---

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { THEMES } from "../../src/core/theme";
 import { rootStructure } from "../../src/core/layout";
 import { docLook, docTheme } from "../../src/core/doc";
-import { setDocProp } from "../../src/core/ops";
+import { findRange, setDocProp } from "../../src/core/ops";
 import { getTopic } from "../../src/core/query";
 import type { Structure } from "../../src/core/types";
 import type { Actions, ViewPrefs } from "./App";
@@ -57,6 +57,7 @@ const STRUCTS: Structure[] = ["map", "logic", "org", "tree"];
 
 export function Toolbar({ position, actions: a, view, setView, panel, togglePanel, laser, toggleLaser, prefs, setPrefs, openSearch }: { position?:"top"|"bottom"|"left"|"right"; openSearch: () => void; actions: Actions; view: "map" | "outline"; setView: (v: "map" | "outline") => void; panel: boolean; togglePanel: () => void; laser: boolean; toggleLaser: () => void; prefs: ViewPrefs; setPrefs: (p: Partial<ViewPrefs>) => void }) {
   const topics = a.selection.filter((id) => !!getTopic(a.doc, id));
+  const summaryRange = a.selection.length === 1 ? findRange(a.doc, a.selection[0]) : null;
   const one = topics.length === 1;
   const ro = a.readOnly;
   const st = rootStructure(a.doc);
@@ -88,6 +89,7 @@ export function Toolbar({ position, actions: a, view, setView, panel, togglePane
           ["showAll","显示 / 隐藏已隐藏节点",false],
           ["focus","聚焦选中分支",!one],
           ["callout","添加 / 编辑标注",ro||!one],
+          ["summaryBranch","概括转分支（继续分点）",ro||summaryRange?.kind!=="summaries"],
           ["calloutColor","标注颜色",ro||!one],
           ["width","节点宽度",ro||!one],
           ["split","按标点拆成子节点",ro||!one],

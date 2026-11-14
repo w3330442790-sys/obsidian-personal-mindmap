@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseMarkdownDoc, writeMarkdownDoc, markdownFusionLosses } from '../src/fusion/markdown';
-import {moveMany} from '../src/core/ops';
+import {addRange, moveMany, summaryToBranch} from '../src/core/ops';
 test('moving list topics after heading siblings is represented in plain Markdown in the same order',()=>{
  const source='# Root\n\n- List\n\n## Heading\n';
  let doc=parseMarkdownDoc(source,'Note');const [list,heading]=doc.root.children!;
@@ -45,6 +45,23 @@ test('maps sibling ranges, relationships and floating topics', () => {
  assert.equal(next.root.boundaries![0].text, 'group');
  assert.equal(next.relationships![0].text, 'edge');
  assert.equal(next.floating![0].text, 'Free');
+});
+
+test('converted summary branches survive Markdown round trips', () => {
+  const source = '# Root\n\n- A\n- B\n';
+  const doc = parseMarkdownDoc(source, 'File');
+  const [a, b] = doc.root.children!;
+  const range = addRange(doc, 'summaries', [a.id, b.id], '总括');
+  assert.ok(range);
+  const result = summaryToBranch(range!.doc, range!.id);
+  assert.ok(result);
+  const written = writeMarkdownDoc(source, result!.doc, 'File');
+  const reloaded = parseMarkdownDoc(written, 'File');
+  assert.deepEqual(reloaded.root.children!.map((child: { text: string }) => child.text), ['总括']);
+  const branch = reloaded.root.children![0];
+  assert.equal(branch.text, '总括');
+  assert.deepEqual(branch.children!.map((child: { text: string }) => child.text), ['A', 'B']);
+  assert.equal(reloaded.root.summaries, undefined);
 });
 
 test('round trips primary styles, IDs and unsupported metadata through a portable extension', () => {

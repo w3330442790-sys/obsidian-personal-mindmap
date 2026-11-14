@@ -8,7 +8,7 @@ const fixture={version:1,root:{id:'root',text:'融合 Mindmap 验证',children:[
   {id:'image',text:'![样例](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF1kAAAAASUVORK5CYII=)'},
   {id:'notes',text:'备注示例',note:'**备注正文**',callout:'可见标注'},
   {id:'question',text:'一道选择题',children:[{id:'correct',text:'[x] 正确选项',children:[{id:'explain',text:'解题思路'}]},{id:'wrong',text:'[ ] 干扰选项'}]}
-]}};
+]},relationships:[{id:'rel1',from:'branch',to:'edit',text:'关联'}]};
 const results=[],errors=[];
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://localhost');const f=path.resolve(root,'.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname));
@@ -146,6 +146,24 @@ async function check(name,fn){await fn();results.push(name);console.log('PASS '+
  await check('docked outline can be toggled beside the canvas',async()=>{
    await command(page,'toggleOutline');await page.getByLabel('大纲面板',{exact:true}).waitFor();assert.ok(await page.locator('.wm-canvas').isVisible());await command(page,'toggleOutline');assert.equal(await page.getByLabel('大纲面板',{exact:true}).count(),0);
  });
+ await check('outline selection offers a right-click red-format toolbar',async()=>{
+   await command(page,'toggleOutline');await page.getByLabel('大纲面板',{exact:true}).waitFor();
+   const index=await page.locator('textarea.wm-otext').evaluateAll((nodes,needle)=>nodes.findIndex(node=>node.value.includes(needle)),'苹果');
+   assert.ok(index>=0);
+   const editor=page.locator('textarea.wm-otext').nth(index);
+   await editor.click();
+   await editor.evaluate(el=>{el.focus();el.setSelectionRange(0,2);});
+   await editor.dispatchEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:260,clientY:220});
+   const bar=page.getByRole('toolbar',{name:'文字格式工具栏'});await bar.waitFor();
+   await bar.getByRole('button',{name:'标红',exact:true}).click();
+   await page.waitForFunction(()=>window.__testDoc.root.children.find(n=>n.id==='edit').text.startsWith('<span style="color:#dc2626">苹果</span>'));
+   await page.keyboard.press('Escape');
+   assert.equal(await bar.count(),0);
+   await page.locator('textarea.wm-otext').first().click();
+   const color=await page.locator('.wm-outline span[style*="color"]').first().evaluate(el=>getComputedStyle(el).color);
+   assert.equal(color,'rgb(220, 38, 38)');
+   await command(page,'toggleOutline');
+ });
  await check('display-only note cards resize and fold without mutating content',async()=>{
    const before=await page.evaluate(()=>JSON.stringify(window.__testDoc));await command(page,'toggleNotes');
    const handle=page.locator('.wm-topic[data-id="notes"] [data-kind="note-resize"]');await handle.scrollIntoViewIfNeeded();const box=await handle.boundingBox();
@@ -182,6 +200,25 @@ async function check(name,fn){await fn();results.push(name);console.log('PASS '+
    await page.evaluate(()=>window.postMessage({type:'select',ids:['edit']},'*'));await command(page,'editNode');const editor=page.getByLabel('topic text');await editor.fill('尚未按回车的内容');await command(page,'syncPending');
    await page.waitForFunction(()=>window.__testDoc.root.children.find(n=>n.id==='edit').text==='尚未按回车的内容');assert.ok(await editor.evaluate(el=>el.classList.contains('wm-editing')));
    await command(page,'flush');assert.ok(!(await editor.evaluate(el=>el.classList.contains('wm-editing'))));
+ });
+ await check('summary context menu can convert a bracket into an editable branch',async()=>{
+  await page.evaluate(()=>window.postMessage({type:'select',ids:['edit','task']},'*'));await command(page,'summary');
+  await page.getByLabel('topic text').fill('总括');await page.getByLabel('topic text').press('Enter');
+  await page.waitForFunction(()=>window.__testDoc.root.summaries.at(-1).text==='总括');
+  const summaryId=await page.evaluate(()=>window.__testDoc.root.summaries.at(-1).id);
+  const summary=page.locator(`.wm-topic[data-id="${summaryId}"]`);await summary.click({button:'right'});
+  await page.locator('.wm-ctx').getByRole('button',{name:'概括转分支（可继续分点）',exact:true}).click();
+  await page.waitForFunction(()=>window.__testDoc.root.children.some(n=>n.text==='总括'&&n.children?.some(c=>c.id==='edit')));
+  await page.getByLabel('topic text').press('Enter');
+  await command(page,'addChild');await page.keyboard.type('复习分点');await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>window.__testDoc.root.children.some(n=>n.text==='总括'&&n.children?.some(c=>c.text==='复习分点')));
+ });
+ await check('relationship label opens an inline text editor',async()=>{
+  const relId=await page.evaluate(()=>window.__testDoc.relationships[0].id);
+  await page.locator(`[data-kind="rel"][data-id="${relId}"]`).first().dispatchEvent('dblclick',{bubbles:true,cancelable:true,button:0});
+  const editor=page.getByLabel('topic text');await editor.waitFor();await editor.fill('促进');await editor.press('Enter');
+  await page.waitForFunction(()=>window.__testDoc.relationships[0].text==='促进');
+  assert.equal(await page.locator('.wm-relation-label,[data-kind="rel"] text').filter({hasText:'促进'}).count(),1);
  });
  await page.screenshot({path:path.resolve(__dirname,'../artifacts/primary-canvas.png'),fullPage:true});
  assert.deepEqual(errors,[]);

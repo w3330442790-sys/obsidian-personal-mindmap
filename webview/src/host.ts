@@ -21,7 +21,7 @@ export type HostCommand = "undo" | "redo" | "zoomIn" | "zoomOut" | "fit" | "expo
   | "toggleOutline" | "toggleLock" | "toggleStudy" | "toggleNotes" | "toggleCallouts" | "focusBranch" | "exitFocus"
   | "copyImage" | "exportSvg" | "fold" | "expandAll" | "collapseAll" | "deleteOnly" | "splitTopic"
   | "addChild" | "addSibling" | "insertBefore" | "insertParent" | "editNode" | "callout" | "addRelationship"
-  | "deleteNode" | "moveUp" | "moveDown" | "outdent" | "indent" | "boundary" | "summary" | "linkNote";
+  | "deleteNode" | "moveUp" | "moveDown" | "outdent" | "indent" | "boundary" | "summary" | "summaryBranch" | "linkNote";
 
 export type InMsg =
   | { type: "init"; text: string; lang: string; fileName: string; host: HostKind }

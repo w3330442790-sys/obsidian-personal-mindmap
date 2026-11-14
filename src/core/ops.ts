@@ -493,6 +493,82 @@ export function removeRange(doc: MindDoc, id: string): MindDoc {
   });
 }
 
+/**
+ * Turn a summary bracket into a real branch node so that the summary itself can
+ * receive further child points. The selected siblings become the new branch's
+ * children, so the canvas and Markdown keep exactly the same visible outline.
+ *
+ * Ranges fully inside the selected span (including one that exactly matches the
+ * span) move down with their nodes. Ranges that cross the boundary keep their
+ * outside endpoint and collapse the inside endpoint onto the new branch, so a
+ * summary that already grouped the area is not lost.
+ */
+export function summaryToBranch(doc: MindDoc, id: string): { doc: MindDoc; id: string; droppedRanges: number } | null {
+  const f = findRange(doc, id);
+  if (!f || f.kind !== "summaries" || !f.owner.children?.length) return null;
+  const { owner, range } = f;
+  const children = owner.children!;
+  const from = children.findIndex((child) => child.id === range.from);
+  const to = children.findIndex((child) => child.id === range.to);
+  if (from < 0 || to < from) return null;
+  const moved = children.slice(from, to + 1);
+  const branchId = genId(allIds(doc));
+  const branchChildren = moved.slice();
+  const lead = moved[0]?.markdown as { kind?: string; level?: number } | undefined;
+  const branch: Topic = {
+    id: branchId,
+    text: (range.text ?? "").trim() || "概括",
+    children: branchChildren,
+    // A summary over list siblings must become a list item, otherwise the
+    // Markdown bridge writes it as a heading before the remaining list and the
+    // visible hierarchy changes. Heading siblings keep heading level. Pure
+    // .wmind documents have no source-node metadata and need none.
+    ...(lead ? {
+      markdown: lead.kind === "heading" ? { kind: "heading", level: lead.level ?? 2 } : { kind: "list", level: 0 },
+    } : {}),
+  };
+  let droppedRanges = 0;
+  const split = (kind: RangeKind) => {
+    const keep: Range[] = [], down: Range[] = [];
+    for (const candidate of owner[kind] ?? []) {
+      if (candidate.id === id) continue;
+      const start = children.findIndex((child) => child.id === candidate.from);
+      const end = children.findIndex((child) => child.id === candidate.to);
+      if (start < 0 || end < start) { droppedRanges++; continue; }
+      if (start >= from && end <= to) {
+        // Fully inside: the endpoints remain direct children of the new branch.
+        down.push(candidate);
+      } else if (start < from && end > to) {
+        // Spans the whole group and beyond; the new branch sits in the middle.
+        keep.push(candidate);
+      } else if (start < from && end <= to) {
+        // Starts before and ends inside: collapse the inside end onto the branch.
+        keep.push({ ...candidate, to: branchId });
+      } else if (start >= from && end > to) {
+        // Starts inside and ends after: collapse the inside start onto the branch.
+        keep.push({ ...candidate, from: branchId });
+      } else {
+        keep.push(candidate);
+      }
+    }
+    return { keep, down };
+  };
+  const summaries = split("summaries");
+  const boundaries = split("boundaries");
+  if (summaries.down.length) branch.summaries = summaries.down;
+  if (boundaries.down.length) branch.boundaries = boundaries.down;
+  const next = updateAt(doc, owner.id, (p) => {
+    const out: Topic = {
+      ...p,
+      children: [...children.slice(0, from), branch, ...children.slice(to + 1)],
+    };
+    if (summaries.keep.length) out.summaries = summaries.keep; else delete out.summaries;
+    if (boundaries.keep.length) out.boundaries = boundaries.keep; else delete out.boundaries;
+    return out;
+  });
+  return { doc: next, id: branchId, droppedRanges };
+}
+
 // ---------- 文档级 ----------
 
 export function setDocProp(doc: MindDoc, key: "theme" | "look" | "fillStyle" | "structure", value: string | undefined): MindDoc {

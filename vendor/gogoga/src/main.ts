@@ -533,20 +533,35 @@ export default class MindMapPlugin extends Plugin {
   }
 
   /**
-   * remember 为真时往 frontmatter 写 mindmap: true（和列表图标），以后都用脑图打开；
-   * 否则只把这个标签页换成脑图视图，不动文件
+   * The top-right action is available on every Markdown tab, not only notes that
+   * already carry `mindmap: true`. It deliberately passes remember=false: one
+   * click switches the current tab without writing frontmatter or creating a
+   * second file. The mindmap view has the symmetric "open as Markdown" action.
    */
-  /** 和脑图视图右上角的「以 Markdown 打开」对称：带 mindmap: true 的笔记在 Markdown 里显示时给一个回脑图的按钮 */
   private syncMapButtons(): void {
     const live = new Set<MarkdownView>();
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof MarkdownView) || !view.file || !this.isMindMapFile(view.file.path)) continue;
+      if (!(view instanceof MarkdownView) || !view.file) continue;
       live.add(view);
       if (this.mapButtons.has(view)) continue;
-      const el = view.addAction(MINDMAP_ICON, t("menu.openAsMindMap"), () => {
-        if (view.file) void this.openAsMindMap(view.file, view.leaf);
+      const el = view.addAction(MINDMAP_ICON, "切换为思维导图（不修改文件）", () => {
+        const file = view.file;
+        if (!file) return;
+        void (async () => {
+          try {
+            await view.save();
+            await this.openAsMindMap(file, view.leaf, false);
+          } catch (error) {
+            new Notice(`切换失败：${(error as Error).message}`);
+          }
+        })();
       });
+      el.classList.add("wm-md-mindmap-action");
+      const label = el.ownerDocument.createElement("span");
+      label.className = "wm-md-mindmap-label";
+      label.textContent = "思维导图";
+      el.appendChild(label);
       this.mapButtons.set(view, el);
     }
     for (const [view, el] of this.mapButtons) {

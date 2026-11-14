@@ -1,5 +1,5 @@
 /** Small safe inline AST: HTML is always literal; host capabilities are explicit. */
-export type RichToken = {kind: "text"|"bold"|"italic"|"strike"|"highlight"|"code"|"link"|"tag"|"image"|"math"|"embed"; text?:string; target?:string; internal?:boolean; children?:RichToken[]; display?:boolean; width?:number; height?:number};
+export type RichToken = {kind: "text"|"bold"|"italic"|"strike"|"highlight"|"color"|"code"|"link"|"tag"|"image"|"math"|"embed"; text?:string; target?:string; internal?:boolean; children?:RichToken[]; display?:boolean; width?:number; height?:number; color?:string};
 function plainTokens(text:string):RichToken[]{
   const result:RichToken[]=[];let at=0;
   for(const match of text.matchAll(/https?:\/\/[^\s<>]+|(^|[\s(])#([\p{L}\p{N}_/-]+)/gu)){
@@ -32,7 +32,7 @@ export function safeImageSource(value:string, hostResolved = false):string|null 
   if (hostResolved && /^(app:|https?:|blob:|vscode-webview-resource:|vscode-resource:)/i.test(value) && !/[\u0000-\u001f]/.test(value)) return value;
   return null;
 }
-const tokenPattern = /\\([!-/:-@[-`{-~])|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^\s)]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\[([^\]]+)\]\(([^\s)]+)\)|(\$\$?)([^$\n]+?)\10|\*\*((?:[^*]|\*(?!\*))+?)\*\*\*?|__(.+?)__|~~(.+?)~~|==(.+?)==|`([^`]+)`|\*([^*\n]+)\*|_([^_\n]+)_|<iframe\s+([^>]*?)\/?>(?:\s*<\/iframe>)?|<br\s*\/?>/gi;
+const tokenPattern = /\\([!-/:-@[-`{-~])|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^\s)]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\[([^\]]+)\]\(([^\s)]+)\)|(\$\$?)([^$\n]+?)\10|\*\*((?:[^*]|\*(?!\*))+?)\*\*\*?|__(.+?)__|~~(.+?)~~|==(.+?)==|`([^`]+)`|\*([^*\n]+)\*|_([^_\n]+)_|<span\s+style="color:(#[0-9a-f]{6})"\s*>([\s\S]*?)<\/span>|<iframe\s+([^>]*?)\/?>(?:\s*<\/iframe>)?|<br\s*\/?>/gi;
 export function parseRich(text:string, depth = 0):RichToken[] {
   if (depth > 8) return [{kind:"text",text}];
   const out:RichToken[] = [];
@@ -51,7 +51,12 @@ export function parseRich(text:string, depth = 0):RichToken[] {
       n = safeLink(target) ? {kind:"link",target,internal:!!m[6],children:parseRich(m[7]??m[8]??target,depth+1).map(token=>token.kind==='link'||token.kind==='tag'?{kind:'text',text:richPlainText([token])}:token)} : {kind:"text",text:m[7]??m[8]??target};
     } else if (m[10]) n = {kind:"math",text:m[11],display:m[10] === "$$"};
     else if (m[19]) {
-      const attrs=new Map<string,string>();for(const attr of m[19].matchAll(/([a-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi))attrs.set(attr[1].toLowerCase(),attr[2]??attr[3]??attr[4]);
+      // Only the exact span shape written by the outline toolbar is rich text.
+      // Any other HTML stays literal, exactly as before.
+      n = {kind:"color",color:m[19].toLowerCase(),children:parseRich(m[20]??"",depth+1)};
+    }
+    else if (m[21]) {
+      const attrs=new Map<string,string>();for(const attr of m[21].matchAll(/([a-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi))attrs.set(attr[1].toLowerCase(),attr[2]??attr[3]??attr[4]);
       const src=attrs.get("src")??"";
       n=/^https?:\/\//i.test(src)&&safeLink(src)?{kind:"embed",target:src,text:attrs.get("title")??"Video embed",width:dimensions(attrs.get("width")).width??320,height:dimensions(attrs.get("height")).width??180}:{kind:"text",text:m[0]};
     }
@@ -70,3 +75,4 @@ export function parseRich(text:string, depth = 0):RichToken[] {
 }
 export function richPlainText(tokens:RichToken[]):string { return tokens.map(t=>t.children ? richPlainText(t.children) : t.text??t.target??"").join(""); }
 export function isRichText(text:string):boolean { return parseRich(text).some(t=>t.kind!=="text") || /<br\s*\/?>|\\[!-/:-@[-`{-~]/i.test(text); }
+export function safeInlineColor(value:string|undefined):string|null { return typeof value==="string"&&/^#[0-9a-f]{6}$/i.test(value)?value:null; }

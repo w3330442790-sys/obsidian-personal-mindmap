@@ -418,7 +418,7 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
-    const target = (e.target as Element).closest('[data-kind="topic"]') as HTMLElement | null;
+    const target = (e.target as Element).closest('[data-kind="topic"],[data-kind="rel"],[data-kind="summary"],[data-kind="boundary"]') as HTMLElement | null;
     const id = target?.dataset.id;
     if (!id || linkingFrom || drag) return;
     e.preventDefault();
@@ -554,7 +554,8 @@ export function Canvas({ doc, scene, selection, linkingFrom, readOnly, viewport,
           </>
         )}
         {r.text && (
-          <g>
+          <g style={{ cursor: "text" }}>
+            <title>双击编辑联系线文字</title>
             <rect x={g.mid.x - (r.text.length * 13 + 16) / 2} y={g.mid.y - 11} width={r.text.length * 13 + 16} height={22} rx={6} fill={P.background} />
             <text x={g.mid.x} y={g.mid.y} dy="0.35em" textAnchor="middle" fontSize={13} fill={color} fontFamily={P.fontFamily}>
               {r.text}
